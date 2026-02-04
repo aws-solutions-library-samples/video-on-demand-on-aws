@@ -4325,7 +4325,7 @@ exports[`VideoOnDemand Stack Test 1`] = `
                     {
                       Ref: AWS::StackName,
                     },
-                    -soure-archive,
+                    -source-archive,
                   ],
                 ],
               },

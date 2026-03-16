@@ -239,7 +239,7 @@ export class VideoOnDemand extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       lifecycleRules: [
         {
-          id: `${cdk.Aws.STACK_NAME}-soure-archive`,
+          id: `${cdk.Aws.STACK_NAME}-source-archive`,
           tagFilters: {
             [cdk.Aws.STACK_NAME]: 'GLACIER'
           },

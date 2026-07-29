@@ -11,8 +11,7 @@
     "test": "jest --coverage"
   },
   "dependencies": {
-    "axios": "^1.12.0",
-    "uuid": "^14.0.0"
+    "axios": "^1.12.0"
   },
   "devDependencies": {
     "@aws-sdk/client-cloudfront": "^3.622.0",

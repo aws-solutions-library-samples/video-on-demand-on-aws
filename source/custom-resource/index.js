@@ -11,7 +11,7 @@
  *  and limitations under the License.                                                                                *
  *********************************************************************************************************************/
 
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const cfn = require('./lib/cfn');
 const Metrics = require('./lib/metrics');
 const S3 = require('./lib/s3');
@@ -42,7 +42,7 @@ exports.handler = async (event, context) => {
                     break;
 
                 case 'UUID':
-                    responseData = { UUID: uuidv4() };
+                    responseData = { UUID: crypto.randomUUID() };
                     break;
 
                 case 'AnonymizedMetric':

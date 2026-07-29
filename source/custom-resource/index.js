@@ -126,6 +126,10 @@ exports.handler = async (event, context) => {
         console.log(`CFN STATUS:: ${response}`);
     } catch (err) {
         console.error(JSON.stringify(err, null, 2));
-        await cfn.send(event, context, 'FAILED');
+        try {
+            await cfn.send(event, context, 'FAILED');
+        } catch (sendErr) {
+            console.error('Failed to send CloudFormation response:', JSON.stringify(sendErr, null, 2));
+        }
     }
 };

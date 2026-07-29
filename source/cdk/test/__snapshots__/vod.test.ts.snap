@@ -824,7 +824,7 @@ exports[`VideoOnDemand Stack Test 1`] = `
             Value: SO9674,
           },
         ],
-        Timeout: 30,
+        Timeout: 120,
       },
       Type: AWS::Lambda::Function,
     },
@@ -1592,6 +1592,12 @@ exports[`VideoOnDemand Stack Test 1`] = `
           ],
         },
         State: ENABLED,
+        Tags: [
+          {
+            Key: SolutionId,
+            Value: SO9674,
+          },
+        ],
         Targets: [
           {
             Arn: {
@@ -1638,6 +1644,12 @@ exports[`VideoOnDemand Stack Test 1`] = `
           ],
         },
         State: ENABLED,
+        Tags: [
+          {
+            Key: SolutionId,
+            Value: SO9674,
+          },
+        ],
         Targets: [
           {
             Arn: {

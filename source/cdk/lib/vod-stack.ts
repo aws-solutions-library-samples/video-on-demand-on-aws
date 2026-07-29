@@ -521,7 +521,7 @@ export class VideoOnDemand extends cdk.Stack {
       functionName: `${cdk.Aws.STACK_NAME}-custom-resource`,
       role: customResourceRole,
       code: lambda.Code.fromAsset('../custom-resource'),
-      timeout: cdk.Duration.seconds(30)
+      timeout: cdk.Duration.seconds(120)
     });
     customResourceLambda.node.addDependency(customResourceRole);
     customResourceLambda.node.addDependency(customResourcePolicy);

@@ -14,7 +14,7 @@
 const { CloudFront } = require("@aws-sdk/client-cloudfront");
 const originId = 'vodMPOrigin';
 
-module.exports.addCustomOrigin = async (distributionId, domainName) => {
+module.exports.addCustomOrigin = async (distributionId, domainName, cachePolicyId, originRequestPolicyId) => {
     if (!distributionId) {
         throw new Error('distributionId must be informed');
     }
@@ -56,32 +56,18 @@ module.exports.addCustomOrigin = async (distributionId, domainName) => {
     const customBehavior = {
         PathPattern: 'out/*',
         TargetOriginId: originId,
-        ForwardedValues: {
-            QueryString: true,
-            Cookies: { Forward: 'none' },
-            Headers: {
-                Quantity: 4,
-                Items: [
-                    'Access-Control-Request-Headers',
-                    'Access-Control-Request-Method',
-                    'Origin',
-                    'Access-Control-Allow-Origin'
-                ]
-            },
-            QueryStringCacheKeys: { Quantity: 1, Items: ['aws.manifestfilter'] }
-        },
-        TrustedSigners: { Enabled: false, Quantity: 0 },
         ViewerProtocolPolicy: 'redirect-to-https',
-        MinTTL: 0,
+        TrustedSigners: { Enabled: false, Quantity: 0 },
         AllowedMethods: {
             Quantity: 2,
             Items: ['HEAD', 'GET'],
             CachedMethods: { Quantity: 2, Items: ['HEAD', 'GET'] }
         },
+        CachePolicyId: cachePolicyId,
+        OriginRequestPolicyId: originRequestPolicyId,
         SmoothStreaming: false,
-        DefaultTTL: 86400,
-        MaxTTL: 31536000,
         Compress: false,
+        FunctionAssociations: { Quantity: 0 },
         LambdaFunctionAssociations: { Quantity: 0 },
         FieldLevelEncryptionId: ''
     };

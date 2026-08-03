@@ -125,7 +125,7 @@ const create = async (properties) => {
         throw new Error('At least one valid packaging configuration must be informed.');
     }
 
-    await cloudfrontHelper.addCustomOrigin(properties.DistributionId, packagingGroup.DomainName);
+    await cloudfrontHelper.addCustomOrigin(properties.DistributionId, packagingGroup.DomainName, properties.CachePolicyId, properties.OriginRequestPolicyId);
 
     return {
         GroupId: packagingGroup.Id,
@@ -138,7 +138,7 @@ const update = async (properties) => {
     const packagingGroup = await mediaPackageVod.describePackagingGroup({ Id: properties.GroupId });
 
     if (properties.EnableMediaPackage == 'true') {
-        await cloudfrontHelper.addCustomOrigin(properties.DistributionId, packagingGroup.DomainName);
+        await cloudfrontHelper.addCustomOrigin(properties.DistributionId, packagingGroup.DomainName, properties.CachePolicyId, properties.OriginRequestPolicyId);
     }
 
     return {

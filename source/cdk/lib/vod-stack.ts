@@ -16,6 +16,8 @@ import { Construct } from 'constructs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as sns from 'aws-cdk-lib/aws-sns';
@@ -26,7 +28,6 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
-import { CloudFrontToS3 } from '@aws-solutions-constructs/aws-cloudfront-s3';
 import { NagSuppressions } from 'cdk-nag';
 
 export class VideoOnDemand extends cdk.Stack {
@@ -332,41 +333,69 @@ export class VideoOnDemand extends cdk.Stack {
 
     /**
      * CloudFront distribution.
-     * AWS Solutions Construct.
-     * Construct includes a logs bucket for the CloudFront distribution and a CloudFront
-     * OriginAccessIdentity which is used to restrict access to S3 from CloudFront.
+     * Uses Origin Access Control (OAC) to restrict access to the S3 destination bucket
+     * and associates an AWS WAF web ACL so the distribution can be subscribed to a
+     * CloudFront flat-rate pricing plan.
      */
-    const cachePolicyName = `cp-${cdk.Aws.REGION}-${cdk.Aws.STACK_NAME}`;
-
-    const cachePolicy = new cloudfront.CachePolicy(this, 'CachePolicy', {
-      cachePolicyName: cachePolicyName,
-      cookieBehavior: cloudfront.CacheCookieBehavior.none(),
-      headerBehavior: cloudfront.CacheHeaderBehavior.allowList(
-        'Origin',
-        'Access-Control-Request-Method',
-        'Access-Control-Request-Headers'
-      ),
-      maxTtl: cdk.Duration.seconds(0)
+    /**
+     * Default behavior uses the AWS-managed CachingDisabled cache policy so the
+     * distribution uses no custom cache policies and can be subscribed to a
+     * CloudFront flat-rate pricing plan.
+     */
+    const originAccessControl = new cloudfront.S3OriginAccessControl(this, 'OriginAccessControl', {
+      originAccessControlName: `oac-${cdk.Aws.STACK_NAME}`,
+      description: `Origin Access Control for the ${cdk.Aws.STACK_NAME} S3 origin`,
+      signing: cloudfront.Signing.SIGV4_ALWAYS
     });
-    const distribution = new CloudFrontToS3(this, 'CloudFrontToS3', {
-      existingBucketObj: destination,
-      cloudFrontDistributionProps: {
-        defaultBehavior: {
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-          cachePolicy: cachePolicy,
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
-        },
-        priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-        logBucket: logsBucket,
-        logFilePrefix: 'cloudfront-logs/'
+
+    const webAcl = new wafv2.CfnWebACL(this, 'WebACL', {
+      defaultAction: { allow: {} },
+      scope: 'CLOUDFRONT',
+      name: `${cdk.Aws.STACK_NAME}-web-acl`,
+      description: `Web ACL for the ${cdk.Aws.STACK_NAME} CloudFront distribution`,
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: `${cdk.Aws.STACK_NAME}-web-acl`,
+        sampledRequestsEnabled: true
       },
-      insertHttpSecurityHeaders: false,
-      logS3AccessLogs: false
+      rules: [
+        {
+          name: 'AWSManagedRulesCommonRuleSet',
+          priority: 0,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: 'AWS',
+              name: 'AWSManagedRulesCommonRuleSet'
+            }
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `${cdk.Aws.STACK_NAME}-common-rule-set`,
+            sampledRequestsEnabled: true
+          }
+        }
+      ]
+    });
+
+    const distribution = new cloudfront.Distribution(this, 'Distribution', {
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessControl(destination, {
+          originAccessControl
+        }),
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
+      },
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      logBucket: logsBucket,
+      logFilePrefix: 'cloudfront-logs/',
+      webAclId: webAcl.attrArn
     });
 
     //cdk_nag
     NagSuppressions.addResourceSuppressions(
-      destination.policy!,
+      destination,
       [
         {
           id: 'AwsSolutions-S10',
@@ -375,20 +404,20 @@ export class VideoOnDemand extends cdk.Stack {
       ]
     );
     NagSuppressions.addResourceSuppressions(
-      distribution.cloudFrontWebDistribution,
+      distribution,
       [
         {
           id: 'AwsSolutions-CFR1',
           reason: 'Use case does not warrant CloudFront Geo restriction'
         }, {
           id: 'AwsSolutions-CFR2',
-          reason: 'Use case does not warrant CloudFront integration with AWS WAF'
+          reason: 'AWS WAF is associated with the distribution'
         }, {
           id: 'AwsSolutions-CFR4', //same as cfn_nag rule W70
           reason: 'CloudFront automatically sets the security policy to TLSv1 when the distribution uses the CloudFront domain name'
         }, {
           id: 'AwsSolutions-CFR7',
-          reason: 'False alarm. The AWS-cloudfront-s3 solutions construct provides Origin-Access-Control by default.',
+          reason: 'The S3 origin uses Origin Access Control (OAC).',
         },
       ]
     );
@@ -429,42 +458,6 @@ export class VideoOnDemand extends cdk.Stack {
             'mediaconvert:ListJobTemplates',
             'mediaconvert:TagResource',
             'mediaconvert:UntagResource'
-          ]
-        }),
-        new iam.PolicyStatement({
-          resources: [
-            `arn:${cdk.Aws.PARTITION}:mediapackage-vod:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:assets/*`,
-            `arn:${cdk.Aws.PARTITION}:mediapackage-vod:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:packaging-configurations/packaging-config-*`
-          ],
-          actions: [
-            'mediapackage-vod:DeleteAsset',
-            'mediapackage-vod:DeletePackagingConfiguration'
-          ]
-        }),
-        new iam.PolicyStatement({
-          resources: [`arn:${cdk.Aws.PARTITION}:mediapackage-vod:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:packaging-groups/${cdk.Aws.STACK_NAME}-packaging-group`],
-          actions: [
-            'mediapackage-vod:DescribePackagingGroup',
-            'mediapackage-vod:DeletePackagingGroup'
-          ]
-        }),
-        new iam.PolicyStatement({
-          resources: ['*'],
-          actions: [
-            'mediapackage-vod:CreatePackagingConfiguration',
-            'mediapackage-vod:CreatePackagingGroup',
-            'mediapackage-vod:ListAssets',
-            'mediapackage-vod:ListPackagingConfigurations',
-            'mediapackage-vod:ListPackagingGroups',
-            'mediapackage-vod:TagResource',
-            'mediapackage-vod:UntagResource'
-          ]
-        }),
-        new iam.PolicyStatement({
-          resources: [`arn:${cdk.Aws.PARTITION}:cloudfront::${cdk.Aws.ACCOUNT_ID}:distribution/${distribution.cloudFrontWebDistribution.distributionId}`],
-          actions: [
-            'cloudfront:GetDistributionConfig',
-            'cloudfront:UpdateDistribution'
           ]
         })
       ]
@@ -570,21 +563,6 @@ export class VideoOnDemand extends cdk.Stack {
     });
 
     /**
-     * Custom Resource: MediaPackage VOD
-     */
-    const mediaPackageVod = new cdk.CustomResource(this, 'MediaPackageVod', {
-      serviceToken: customResourceLambda.functionArn,
-      properties: {
-        Resource: 'MediaPackageVod',
-        StackName: cdk.Aws.STACK_NAME,
-        GroupId: `${cdk.Aws.STACK_NAME}-packaging-group`,
-        PackagingConfigurations: 'HLS,DASH,MSS,CMAF',
-        DistributionId: distribution.cloudFrontWebDistribution.distributionId,
-        EnableMediaPackage: cdk.Fn.conditionIf(conditionEnableMediaPackage.logicalId, 'true', 'false')
-      }
-    });
-
-    /**
      * MediaConvert role
      */
     const mediaConvertRole = new iam.Role(this, 'MediaConvertRole', {
@@ -634,55 +612,6 @@ export class VideoOnDemand extends cdk.Stack {
         }
       ]
     );
-
-    /**
-     * MediaPackageVod role
-     */
-    const mediaPackageVodRole = new iam.Role(this, 'MediaPackageVodRole', {
-      assumedBy: new iam.ServicePrincipal('mediapackage.amazonaws.com')
-    });
-
-    const mediaPackageVodPolicy = new iam.Policy(this, 'MediaPackageVodPolicy', {
-      policyName: `${cdk.Aws.STACK_NAME}-mediapackagevod-policy`,
-      statements: [
-        new iam.PolicyStatement({
-          resources: [
-            destination.bucketArn,
-            `${destination.bucketArn}/*`
-          ],
-          actions: [
-            's3:GetObject',
-            's3:GetBucketLocation',
-            's3:GetBucketRequestPayment'
-          ]
-        })
-      ]
-    });
-    mediaPackageVodPolicy.attachToRole(mediaPackageVodRole);
-
-    //cfn_nag
-    const cfnMediaPackageVodRole = mediaPackageVodRole.node.findChild('Resource') as iam.CfnRole;
-    cfnMediaPackageVodRole.cfnOptions.metadata = {
-      cfn_nag: {
-        rules_to_suppress: [
-          {
-            id: 'W11',
-            reason: '* is required to get objects from S3'
-          }
-        ]
-      }
-    };
-    //cdk_nag
-    NagSuppressions.addResourceSuppressions(
-      mediaPackageVodPolicy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: '/* required to get/put objects to S3'
-        }
-      ]
-    );
-
 
     /**
      * SNS Topic
@@ -972,7 +901,7 @@ export class VideoOnDemand extends cdk.Stack {
           `${cdk.Aws.STACK_NAME}_Ott_720p_Avc_Aac_16x9_mvod_no_preset`,
           `${cdk.Aws.STACK_NAME}_Ott_720p_Avc_Aac_16x9_qvbr_no_preset`
         )}`,
-        CloudFront: distribution.cloudFrontWebDistribution.domainName,
+        CloudFront: distribution.distributionDomainName,
         EnableMediaPackage: `${cdk.Fn.conditionIf(conditionEnableMediaPackage.logicalId, 'true', 'false')}`,
         InputRotate: 'DEGREE_0',
         EnableSns: `${cdk.Fn.conditionIf(conditionEnableSns.logicalId, 'true', 'false')}`,
@@ -1740,116 +1669,6 @@ export class VideoOnDemand extends cdk.Stack {
     };
 
     /**
-     * MediaPackageAssets role and lambda
-     */
-    const mediaPackageAssetsRole = new iam.Role(this, 'MediaPackageAssetsRole', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
-    });
-    const mediaPackageAssetsPolicy = new iam.Policy(this, 'MediaPackageAssetsPolicy', {
-      policyName: `${cdk.Aws.STACK_NAME}-media-package-assets-role`,
-      statements: [
-        new iam.PolicyStatement({
-          resources: [mediaPackageVodRole.roleArn],
-          actions: ['iam:PassRole']
-        }),
-        new iam.PolicyStatement({
-          resources: ['*'],
-          actions: [
-            'mediapackage-vod:CreateAsset',
-            'mediapackage-vod:TagResource',
-            'mediapackage-vod:UntagResource'
-          ]
-        }),
-        new iam.PolicyStatement({
-          resources: [errorHandlerLambda.functionArn],
-          actions: ['lambda:InvokeFunction']
-        }),
-        new iam.PolicyStatement({
-          resources: [`arn:${cdk.Aws.PARTITION}:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:log-group:/aws/lambda/*`],
-          actions: [
-            'logs:CreateLogGroup',
-            'logs:CreateLogStream',
-            'logs:PutLogEvents'
-          ]
-        })
-      ]
-    });
-    mediaPackageAssetsPolicy.attachToRole(mediaPackageAssetsRole);
-
-    //cfn_nag
-    const cfnMediaPackageAssetsRole = mediaPackageAssetsRole.node.findChild('Resource') as iam.CfnRole;
-    cfnMediaPackageAssetsRole.cfnOptions.metadata = {
-      cfn_nag: {
-        rules_to_suppress: [
-          {
-            id: 'W11',
-            reason: '* is used so that the Lambda function can create log groups'
-          }
-        ]
-      }
-    };
-    const cfnMediaPackageAssetsPolicy = mediaPackageAssetsPolicy.node.findChild('Resource') as iam.CfnPolicy;
-    cfnMediaPackageAssetsPolicy.cfnOptions.metadata = {
-      cfn_nag: {
-        rules_to_suppress: [
-          {
-            id: 'W12',
-            reason: '* is used so that the Lambda function can create log groups'
-          }
-        ]
-      }
-    };
-    //cdk_nag
-    NagSuppressions.addResourceSuppressions(
-      mediaPackageAssetsPolicy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: '* is used so that the Lambda function can create log groups'
-        }
-      ]
-    );
-
-    const mediaPackageAssetsLambda = new lambda.Function(this, 'MediaPackageAssetsLambda', {
-      runtime: lambda.Runtime.NODEJS_22_X,
-      handler: 'index.handler',
-      functionName: `${cdk.Aws.STACK_NAME}-media-package-assets`,
-      description: 'Ingests an asset into MediaPackage-VOD',
-      environment: {
-        SOLUTION_IDENTIFIER: `AwsSolution/${solutionId}/%%VERSION%%`,
-        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
-        ErrorHandler: errorHandlerLambda.functionArn,
-        GroupId: mediaPackageVod.getAttString('GroupId'),
-        GroupDomainName: mediaPackageVod.getAttString('GroupDomainName'),
-        MediaPackageVodRole: mediaPackageVodRole.roleArn
-      },
-      role: mediaPackageAssetsRole,
-      code: lambda.Code.fromAsset('../media-package-assets'),
-      timeout: cdk.Duration.seconds(120)
-    });
-    mediaPackageAssetsLambda.node.addDependency(mediaPackageAssetsRole);
-    mediaPackageAssetsLambda.node.addDependency(mediaPackageAssetsPolicy);
-
-    //cfn_nag
-    const cfnMediaPackageAssetsLambda = mediaPackageAssetsLambda.node.findChild('Resource') as lambda.CfnFunction;
-    cfnMediaPackageAssetsLambda.cfnOptions.metadata = {
-      cfn_nag: {
-        rules_to_suppress: [
-          {
-            id: 'W89',
-            reason: 'Lambda functions do not need a VPC'
-          }, {
-            id: 'W92',
-            reason: 'Lambda do not need ReservedConcurrentExecutions in this case'
-          }, {
-            id: 'W58',
-            reason: 'Invalid warning: function has access to cloudwatch'
-          }
-        ]
-      }
-    };
-
-    /**
      * Step Functions role and lambda
      */
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsRole', {
@@ -1959,7 +1778,6 @@ export class VideoOnDemand extends cdk.Stack {
       cfnArchiveSourceLambda,
       cfnSqsSendMessageLambda,
       cfnSnsNotificationLambda,
-      cfnMediaPackageAssetsLambda,
       cfnStepFunctionsLambda,
     ].forEach(lambdaFunction => {
       NagSuppressions.addResourceSuppressions(
@@ -2108,10 +1926,6 @@ export class VideoOnDemand extends cdk.Stack {
       lambdaFunction: archiveSourceLambda,
       payloadResponseOnly: true
     });
-    const mediaPackageAssetsTask = new tasks.LambdaInvoke(this, 'MediaPackage Assets', {
-      lambdaFunction: mediaPackageAssetsLambda,
-      payloadResponseOnly: true
-    });
     const sqsSendMessageTask = new tasks.LambdaInvoke(this, 'SQS Send Message', {
       lambdaFunction: sqsSendMessageLambda,
       payloadResponseOnly: true
@@ -2218,14 +2032,12 @@ export class VideoOnDemand extends cdk.Stack {
      * 2: Archive Source Choice
      *    3: Archive OR
      *       Deep Archive
-     * 4: MediaPackage Choice
-     *    5: MediaPackage Assets
-     * 6: DynamoDB Update
-     * 7: SQS Choice
-     *    8: SQS Send Message
-     * 9: SNS Choice
-     *    10: SNS Notification
-     * 11: Complete
+     * 4: DynamoDB Update
+     * 5: SQS Choice
+     *    6: SQS Send Message
+     * 7: SNS Choice
+     *    8: SNS Notification
+     * 9: Complete
      */
     snsNotificationTaskPublish.next(completeState);
     const snsChoicePublish = new sfn.Choice(this, 'SNS Choice (Publish)');
@@ -2243,18 +2055,12 @@ export class VideoOnDemand extends cdk.Stack {
       .start(dynamodbUpdateTaskPublish)
       .next(sqsChoice);
 
-    mediaPackageAssetsTask.next(dynamoChain);
-    const mediaPackageChoice = new sfn.Choice(this, 'MediaPackage Choice');
-    mediaPackageChoice
-      .when(sfn.Condition.booleanEquals('$.enableMediaPackage', true), mediaPackageAssetsTask)
-      .otherwise(dynamoChain);
-
-    archiveTask.next(mediaPackageChoice);
-    deepArchiveTask.next(mediaPackageChoice);
+    archiveTask.next(dynamoChain);
+    deepArchiveTask.next(dynamoChain);
     const archiveSourceChoice = new sfn.Choice(this, 'Archive Source Choice')
       .when(sfn.Condition.stringEquals('$.archiveSource', 'GLACIER'), archiveTask)
       .when(sfn.Condition.stringEquals('$.archiveSource', 'DEEP_ARCHIVE'), deepArchiveTask)
-      .otherwise(mediaPackageChoice);
+      .otherwise(dynamoChain);
 
     const publishWorkflowDefinition = outputValidateTask
       .next(archiveSourceChoice);
@@ -2351,7 +2157,7 @@ export class VideoOnDemand extends cdk.Stack {
       exportName: `${cdk.Aws.STACK_NAME}:Destination`
     });
     new cdk.CfnOutput(this, 'CloudFrontDomainName', { // NOSONAR
-      value: distribution.cloudFrontWebDistribution.domainName,
+      value: distribution.distributionDomainName,
       description: 'CloudFront Domain Name',
       exportName: `${cdk.Aws.STACK_NAME}:CloudFront`
     });

@@ -22,10 +22,13 @@ const helper = require('./cloudfront');
 const testAssets = require('./test-assets');
 
 describe('#CLOUDFRONT::', () => {
+    const cachePolicyId = 'cache-policy-id';
+    const originRequestPolicyId = 'origin-request-policy-id';
+
     describe('Validation', () => {
         it('should throw an exception when distribution id is undefined', async () => {
             try {
-                await helper.addCustomOrigin(undefined, testAssets.DomainName);
+                await helper.addCustomOrigin(undefined, testAssets.DomainName, cachePolicyId, originRequestPolicyId);
             } catch (error) {
                 expect(error).to.not.be.null;
                 return;
@@ -36,7 +39,7 @@ describe('#CLOUDFRONT::', () => {
 
         it('should throw an exception when domain name is undefined', async () => {
             try {
-                await helper.addCustomOrigin(testAssets.DistributionId, undefined);
+                await helper.addCustomOrigin(testAssets.DistributionId, undefined, cachePolicyId, originRequestPolicyId);
             } catch (error) {
                 expect(error).to.not.be.null;
                 return;
@@ -58,7 +61,7 @@ describe('#CLOUDFRONT::', () => {
                 cloudFrontClientMock.on(UpdateDistributionCommand).rejects({ code: 'some error' });
 
 
-                await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName);
+                await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName, cachePolicyId, originRequestPolicyId);
             } catch (error) {
                 expect(error).to.not.be.null;
                 return;
@@ -73,7 +76,7 @@ describe('#CLOUDFRONT::', () => {
             cloudFrontClientMock.on(GetDistributionConfigCommand).resolves(config);
             cloudFrontClientMock.on(UpdateDistributionCommand).rejects({ code: 'PreconditionFailed' });
 
-            await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName);
+            await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName, cachePolicyId, originRequestPolicyId);
         });
 
         it('should not add origin if it already exists', async () => {
@@ -89,17 +92,28 @@ describe('#CLOUDFRONT::', () => {
                 return Promise.resolve();
             });
 
-            await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName);
+            await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName, cachePolicyId, originRequestPolicyId);
             expect(callCount).to.equal(0);
         });
 
-        it('should succeed with valid parameters', async () => {
+        it('should add a cache behavior with cache and origin request policies instead of ForwardedValues', async () => {
+            let updateInput;
+
             const config = _.cloneDeep(testAssets.ConfigurationWithS3);
 
             cloudFrontClientMock.on(GetDistributionConfigCommand).resolves(config);
-            cloudFrontClientMock.on(UpdateDistributionCommand).resolves();
+            cloudFrontClientMock.on(UpdateDistributionCommand, (input) => {
+                updateInput = input;
+                return Promise.resolve();
+            });
 
-            await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName);
+            await helper.addCustomOrigin(testAssets.DistributionId, testAssets.DomainName, cachePolicyId, originRequestPolicyId);
+
+            const behavior = updateInput.DistributionConfig.CacheBehaviors.Items[0];
+            expect(behavior.ForwardedValues).to.be.undefined;
+            expect(behavior.CachePolicyId).to.equal(cachePolicyId);
+            expect(behavior.OriginRequestPolicyId).to.equal(originRequestPolicyId);
+            expect(behavior.PathPattern).to.equal('out/*');
         });
     });
 });

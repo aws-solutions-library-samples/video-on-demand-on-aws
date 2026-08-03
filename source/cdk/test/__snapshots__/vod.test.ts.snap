@@ -145,7 +145,7 @@ exports[`VideoOnDemand Stack Test 1`] = `
       },
       Value: {
         Fn::GetAtt: [
-          CloudFrontToS3CloudFrontDistribution241D9866,
+          Distribution830FAC52,
           DomainName,
         ],
       },
@@ -591,170 +591,6 @@ exports[`VideoOnDemand Stack Test 1`] = `
       },
       Type: AWS::IAM::Role,
     },
-    CachePolicy26D8A535: {
-      Properties: {
-        CachePolicyConfig: {
-          DefaultTTL: 86400,
-          MaxTTL: 86400,
-          MinTTL: 0,
-          Name: {
-            Fn::Join: [
-              ,
-              [
-                cp-,
-                {
-                  Ref: AWS::Region,
-                },
-                -,
-                {
-                  Ref: AWS::StackName,
-                },
-              ],
-            ],
-          },
-          ParametersInCacheKeyAndForwardedToOrigin: {
-            CookiesConfig: {
-              CookieBehavior: none,
-            },
-            EnableAcceptEncodingBrotli: false,
-            EnableAcceptEncodingGzip: false,
-            HeadersConfig: {
-              HeaderBehavior: whitelist,
-              Headers: [
-                Origin,
-                Access-Control-Request-Method,
-                Access-Control-Request-Headers,
-              ],
-            },
-            QueryStringsConfig: {
-              QueryStringBehavior: none,
-            },
-          },
-        },
-      },
-      Type: AWS::CloudFront::CachePolicy,
-    },
-    CloudFrontToS3CloudFrontDistribution241D9866: {
-      Metadata: {
-        cdk_nag: {
-          rules_to_suppress: [
-            {
-              id: AwsSolutions-CFR1,
-              reason: Use case does not warrant CloudFront Geo restriction,
-            },
-            {
-              id: AwsSolutions-CFR2,
-              reason: Use case does not warrant CloudFront integration with AWS WAF,
-            },
-            {
-              id: AwsSolutions-CFR4,
-              reason: CloudFront automatically sets the security policy to TLSv1 when the distribution uses the CloudFront domain name,
-            },
-            {
-              id: AwsSolutions-CFR7,
-              reason: False alarm. The AWS-cloudfront-s3 solutions construct provides Origin-Access-Control by default.,
-            },
-          ],
-        },
-        cfn_nag: {
-          rules_to_suppress: [
-            {
-              id: W70,
-              reason: Since the distribution uses the CloudFront domain name, CloudFront automatically sets the security policy to TLSv1 regardless of the value of MinimumProtocolVersion,
-            },
-          ],
-        },
-      },
-      Properties: {
-        DistributionConfig: {
-          DefaultCacheBehavior: {
-            AllowedMethods: [
-              GET,
-              HEAD,
-            ],
-            CachePolicyId: {
-              Ref: CachePolicy26D8A535,
-            },
-            Compress: true,
-            TargetOriginId: VideoOnDemandCloudFrontToS3CloudFrontDistributionOrigin1CC6EEFFD,
-            ViewerProtocolPolicy: redirect-to-https,
-          },
-          DefaultRootObject: index.html,
-          Enabled: true,
-          HttpVersion: http2,
-          IPV6Enabled: true,
-          Logging: {
-            Bucket: {
-              Fn::GetAtt: [
-                Logs6819BB44,
-                RegionalDomainName,
-              ],
-            },
-            Prefix: cloudfront-logs/,
-          },
-          Origins: [
-            {
-              DomainName: {
-                Fn::GetAtt: [
-                  Destination920A3C57,
-                  RegionalDomainName,
-                ],
-              },
-              Id: VideoOnDemandCloudFrontToS3CloudFrontDistributionOrigin1CC6EEFFD,
-              OriginAccessControlId: {
-                Fn::GetAtt: [
-                  CloudFrontToS3CloudFrontOacFB5D4E73,
-                  Id,
-                ],
-              },
-              S3OriginConfig: {
-                OriginAccessIdentity: ,
-              },
-            },
-          ],
-          PriceClass: PriceClass_100,
-        },
-        Tags: [
-          {
-            Key: SolutionId,
-            Value: SO9674,
-          },
-        ],
-      },
-      Type: AWS::CloudFront::Distribution,
-    },
-    CloudFrontToS3CloudFrontOacFB5D4E73: {
-      Properties: {
-        OriginAccessControlConfig: {
-          Description: Origin access control provisioned by aws-cloudfront-s3,
-          Name: {
-            Fn::Join: [
-              ,
-              [
-                aws-cloudfront-s3-CloutToS3-,
-                {
-                  Fn::Select: [
-                    2,
-                    {
-                      Fn::Split: [
-                        /,
-                        {
-                          Ref: AWS::StackId,
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            ],
-          },
-          OriginAccessControlOriginType: s3,
-          SigningBehavior: always,
-          SigningProtocol: sigv4,
-        },
-      },
-      Type: AWS::CloudFront::OriginAccessControl,
-    },
     CustomResource8CDCD7A7: {
       DependsOn: [
         CustomResourcePolicy79526710,
@@ -929,125 +765,6 @@ exports[`VideoOnDemand Stack Test 1`] = `
                 ],
               },
             },
-            {
-              Action: [
-                mediapackage-vod:DeleteAsset,
-                mediapackage-vod:DeletePackagingConfiguration,
-              ],
-              Effect: Allow,
-              Resource: [
-                {
-                  Fn::Join: [
-                    ,
-                    [
-                      arn:,
-                      {
-                        Ref: AWS::Partition,
-                      },
-                      :mediapackage-vod:,
-                      {
-                        Ref: AWS::Region,
-                      },
-                      :,
-                      {
-                        Ref: AWS::AccountId,
-                      },
-                      :assets/*,
-                    ],
-                  ],
-                },
-                {
-                  Fn::Join: [
-                    ,
-                    [
-                      arn:,
-                      {
-                        Ref: AWS::Partition,
-                      },
-                      :mediapackage-vod:,
-                      {
-                        Ref: AWS::Region,
-                      },
-                      :,
-                      {
-                        Ref: AWS::AccountId,
-                      },
-                      :packaging-configurations/packaging-config-*,
-                    ],
-                  ],
-                },
-              ],
-            },
-            {
-              Action: [
-                mediapackage-vod:DescribePackagingGroup,
-                mediapackage-vod:DeletePackagingGroup,
-              ],
-              Effect: Allow,
-              Resource: {
-                Fn::Join: [
-                  ,
-                  [
-                    arn:,
-                    {
-                      Ref: AWS::Partition,
-                    },
-                    :mediapackage-vod:,
-                    {
-                      Ref: AWS::Region,
-                    },
-                    :,
-                    {
-                      Ref: AWS::AccountId,
-                    },
-                    :packaging-groups/,
-                    {
-                      Ref: AWS::StackName,
-                    },
-                    -packaging-group,
-                  ],
-                ],
-              },
-            },
-            {
-              Action: [
-                mediapackage-vod:CreatePackagingConfiguration,
-                mediapackage-vod:CreatePackagingGroup,
-                mediapackage-vod:ListAssets,
-                mediapackage-vod:ListPackagingConfigurations,
-                mediapackage-vod:ListPackagingGroups,
-                mediapackage-vod:TagResource,
-                mediapackage-vod:UntagResource,
-              ],
-              Effect: Allow,
-              Resource: *,
-            },
-            {
-              Action: [
-                cloudfront:GetDistributionConfig,
-                cloudfront:UpdateDistribution,
-              ],
-              Effect: Allow,
-              Resource: {
-                Fn::Join: [
-                  ,
-                  [
-                    arn:,
-                    {
-                      Ref: AWS::Partition,
-                    },
-                    :cloudfront::,
-                    {
-                      Ref: AWS::AccountId,
-                    },
-                    :distribution/,
-                    {
-                      Ref: CloudFrontToS3CloudFrontDistribution241D9866,
-                    },
-                  ],
-                ],
-              },
-            },
           ],
           Version: 2012-10-17,
         },
@@ -1161,24 +878,6 @@ exports[`VideoOnDemand Stack Test 1`] = `
       UpdateReplacePolicy: Retain,
     },
     DestinationPolicy7982387E: {
-      Metadata: {
-        cdk_nag: {
-          rules_to_suppress: [
-            {
-              id: AwsSolutions-S10,
-              reason: Bucket is private and is not using HTTP,
-            },
-          ],
-        },
-        cfn_nag: {
-          rules_to_suppress: [
-            {
-              id: F16,
-              reason: Public website bucket policy requires a wildcard principal,
-            },
-          ],
-        },
-      },
       Properties: {
         Bucket: {
           Ref: Destination920A3C57,
@@ -1237,7 +936,7 @@ exports[`VideoOnDemand Stack Test 1`] = `
                         },
                         :distribution/,
                         {
-                          Ref: CloudFrontToS3CloudFrontDistribution241D9866,
+                          Ref: Distribution830FAC52,
                         },
                       ],
                     ],
@@ -1268,6 +967,90 @@ exports[`VideoOnDemand Stack Test 1`] = `
         },
       },
       Type: AWS::S3::BucketPolicy,
+    },
+    Distribution830FAC52: {
+      Metadata: {
+        cdk_nag: {
+          rules_to_suppress: [
+            {
+              id: AwsSolutions-CFR1,
+              reason: Use case does not warrant CloudFront Geo restriction,
+            },
+            {
+              id: AwsSolutions-CFR2,
+              reason: AWS WAF is associated with the distribution,
+            },
+            {
+              id: AwsSolutions-CFR4,
+              reason: CloudFront automatically sets the security policy to TLSv1 when the distribution uses the CloudFront domain name,
+            },
+            {
+              id: AwsSolutions-CFR7,
+              reason: The S3 origin uses Origin Access Control (OAC).,
+            },
+          ],
+        },
+      },
+      Properties: {
+        DistributionConfig: {
+          DefaultCacheBehavior: {
+            AllowedMethods: [
+              GET,
+              HEAD,
+            ],
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad,
+            Compress: true,
+            TargetOriginId: VideoOnDemandDistributionOrigin1AEA6F9D4,
+            ViewerProtocolPolicy: redirect-to-https,
+          },
+          Enabled: true,
+          HttpVersion: http2,
+          IPV6Enabled: true,
+          Logging: {
+            Bucket: {
+              Fn::GetAtt: [
+                Logs6819BB44,
+                RegionalDomainName,
+              ],
+            },
+            Prefix: cloudfront-logs/,
+          },
+          Origins: [
+            {
+              DomainName: {
+                Fn::GetAtt: [
+                  Destination920A3C57,
+                  RegionalDomainName,
+                ],
+              },
+              Id: VideoOnDemandDistributionOrigin1AEA6F9D4,
+              OriginAccessControlId: {
+                Fn::GetAtt: [
+                  OriginAccessControlDC2011A2,
+                  Id,
+                ],
+              },
+              S3OriginConfig: {
+                OriginAccessIdentity: ,
+              },
+            },
+          ],
+          PriceClass: PriceClass_100,
+          WebACLId: {
+            Fn::GetAtt: [
+              WebACL,
+              Arn,
+            ],
+          },
+        },
+        Tags: [
+          {
+            Key: SolutionId,
+            Value: SO9674,
+          },
+        ],
+      },
+      Type: AWS::CloudFront::Distribution,
     },
     DynamoDBTable59784FC0: {
       DeletionPolicy: Retain,
@@ -2284,7 +2067,7 @@ exports[`VideoOnDemand Stack Test 1`] = `
             },
             CloudFront: {
               Fn::GetAtt: [
-                CloudFrontToS3CloudFrontDistribution241D9866,
+                Distribution830FAC52,
                 DomainName,
               ],
             },
@@ -3061,375 +2844,38 @@ exports[`VideoOnDemand Stack Test 1`] = `
       },
       Type: AWS::IAM::Role,
     },
-    MediaPackageAssetsLambda63EB0986: {
-      DependsOn: [
-        MediaPackageAssetsPolicy84101CE2,
-        MediaPackageAssetsRole5B26B67C,
-      ],
-      Metadata: {
-        cdk_nag: {
-          rules_to_suppress: [
-            {
-              id: AwsSolutions-L1,
-              reason: Lambda NodeJS 22 Runtime in development...,
-            },
-          ],
-        },
-        cfn_nag: {
-          rules_to_suppress: [
-            {
-              id: W89,
-              reason: Lambda functions do not need a VPC,
-            },
-            {
-              id: W92,
-              reason: Lambda do not need ReservedConcurrentExecutions in this case,
-            },
-            {
-              id: W58,
-              reason: Invalid warning: function has access to cloudwatch,
-            },
-          ],
-        },
-      },
+    OriginAccessControlDC2011A2: {
       Properties: {
-        Code: {
-          S3Bucket: {
-            Fn::Sub: cdk-hnb659fds-assets-\${AWS::AccountId}-\${AWS::Region},
-          },
-          S3Key: [HASH REMOVED].zip,
-        },
-        Description: Ingests an asset into MediaPackage-VOD,
-        Environment: {
-          Variables: {
-            AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1,
-            ErrorHandler: {
-              Fn::GetAtt: [
-                ErrorHandlerLambdaFC10367C,
-                Arn,
-              ],
-            },
-            GroupDomainName: {
-              Fn::GetAtt: [
-                MediaPackageVod,
-                GroupDomainName,
-              ],
-            },
-            GroupId: {
-              Fn::GetAtt: [
-                MediaPackageVod,
-                GroupId,
-              ],
-            },
-            MediaPackageVodRole: {
-              Fn::GetAtt: [
-                MediaPackageVodRole931E8163,
-                Arn,
-              ],
-            },
-            SOLUTION_IDENTIFIER: AwsSolution/SO9674/%%VERSION%%,
-          },
-        },
-        FunctionName: {
-          Fn::Join: [
-            ,
-            [
-              {
-                Ref: AWS::StackName,
-              },
-              -media-package-assets,
-            ],
-          ],
-        },
-        Handler: index.handler,
-        Role: {
-          Fn::GetAtt: [
-            MediaPackageAssetsRole5B26B67C,
-            Arn,
-          ],
-        },
-        Runtime: nodejs22.x,
-        Tags: [
-          {
-            Key: SolutionId,
-            Value: SO9674,
-          },
-        ],
-        Timeout: 120,
-      },
-      Type: AWS::Lambda::Function,
-    },
-    MediaPackageAssetsPolicy84101CE2: {
-      Metadata: {
-        cdk_nag: {
-          rules_to_suppress: [
-            {
-              id: AwsSolutions-IAM5,
-              reason: * is used so that the Lambda function can create log groups,
-            },
-          ],
-        },
-        cfn_nag: {
-          rules_to_suppress: [
-            {
-              id: W12,
-              reason: * is used so that the Lambda function can create log groups,
-            },
-          ],
-        },
-      },
-      Properties: {
-        PolicyDocument: {
-          Statement: [
-            {
-              Action: iam:PassRole,
-              Effect: Allow,
-              Resource: {
-                Fn::GetAtt: [
-                  MediaPackageVodRole931E8163,
-                  Arn,
-                ],
-              },
-            },
-            {
-              Action: [
-                mediapackage-vod:CreateAsset,
-                mediapackage-vod:TagResource,
-                mediapackage-vod:UntagResource,
-              ],
-              Effect: Allow,
-              Resource: *,
-            },
-            {
-              Action: lambda:InvokeFunction,
-              Effect: Allow,
-              Resource: {
-                Fn::GetAtt: [
-                  ErrorHandlerLambdaFC10367C,
-                  Arn,
-                ],
-              },
-            },
-            {
-              Action: [
-                logs:CreateLogGroup,
-                logs:CreateLogStream,
-                logs:PutLogEvents,
-              ],
-              Effect: Allow,
-              Resource: {
-                Fn::Join: [
-                  ,
-                  [
-                    arn:,
-                    {
-                      Ref: AWS::Partition,
-                    },
-                    :logs:,
-                    {
-                      Ref: AWS::Region,
-                    },
-                    :,
-                    {
-                      Ref: AWS::AccountId,
-                    },
-                    :log-group:/aws/lambda/*,
-                  ],
-                ],
-              },
-            },
-          ],
-          Version: 2012-10-17,
-        },
-        PolicyName: {
-          Fn::Join: [
-            ,
-            [
-              {
-                Ref: AWS::StackName,
-              },
-              -media-package-assets-role,
-            ],
-          ],
-        },
-        Roles: [
-          {
-            Ref: MediaPackageAssetsRole5B26B67C,
-          },
-        ],
-      },
-      Type: AWS::IAM::Policy,
-    },
-    MediaPackageAssetsRole5B26B67C: {
-      Metadata: {
-        cfn_nag: {
-          rules_to_suppress: [
-            {
-              id: W11,
-              reason: * is used so that the Lambda function can create log groups,
-            },
-          ],
-        },
-      },
-      Properties: {
-        AssumeRolePolicyDocument: {
-          Statement: [
-            {
-              Action: sts:AssumeRole,
-              Effect: Allow,
-              Principal: {
-                Service: lambda.amazonaws.com,
-              },
-            },
-          ],
-          Version: 2012-10-17,
-        },
-        Tags: [
-          {
-            Key: SolutionId,
-            Value: SO9674,
-          },
-        ],
-      },
-      Type: AWS::IAM::Role,
-    },
-    MediaPackageVod: {
-      DeletionPolicy: Delete,
-      Properties: {
-        DistributionId: {
-          Ref: CloudFrontToS3CloudFrontDistribution241D9866,
-        },
-        EnableMediaPackage: {
-          Fn::If: [
-            EnableMediaPackageCondition,
-            true,
-            false,
-          ],
-        },
-        GroupId: {
-          Fn::Join: [
-            ,
-            [
-              {
-                Ref: AWS::StackName,
-              },
-              -packaging-group,
-            ],
-          ],
-        },
-        PackagingConfigurations: HLS,DASH,MSS,CMAF,
-        Resource: MediaPackageVod,
-        ServiceToken: {
-          Fn::GetAtt: [
-            CustomResource8CDCD7A7,
-            Arn,
-          ],
-        },
-        StackName: {
-          Ref: AWS::StackName,
-        },
-      },
-      Type: AWS::CloudFormation::CustomResource,
-      UpdateReplacePolicy: Delete,
-    },
-    MediaPackageVodPolicy1DC9ECF2: {
-      Metadata: {
-        cdk_nag: {
-          rules_to_suppress: [
-            {
-              id: AwsSolutions-IAM5,
-              reason: /* required to get/put objects to S3,
-            },
-          ],
-        },
-      },
-      Properties: {
-        PolicyDocument: {
-          Statement: [
-            {
-              Action: [
-                s3:GetObject,
-                s3:GetBucketLocation,
-                s3:GetBucketRequestPayment,
-              ],
-              Effect: Allow,
-              Resource: [
+        OriginAccessControlConfig: {
+          Description: {
+            Fn::Join: [
+              ,
+              [
+                Origin Access Control for the ,
                 {
-                  Fn::GetAtt: [
-                    Destination920A3C57,
-                    Arn,
-                  ],
+                  Ref: AWS::StackName,
                 },
+                 S3 origin,
+              ],
+            ],
+          },
+          Name: {
+            Fn::Join: [
+              ,
+              [
+                oac-,
                 {
-                  Fn::Join: [
-                    ,
-                    [
-                      {
-                        Fn::GetAtt: [
-                          Destination920A3C57,
-                          Arn,
-                        ],
-                      },
-                      /*,
-                    ],
-                  ],
+                  Ref: AWS::StackName,
                 },
               ],
-            },
-          ],
-          Version: 2012-10-17,
-        },
-        PolicyName: {
-          Fn::Join: [
-            ,
-            [
-              {
-                Ref: AWS::StackName,
-              },
-              -mediapackagevod-policy,
             ],
-          ],
-        },
-        Roles: [
-          {
-            Ref: MediaPackageVodRole931E8163,
           },
-        ],
-      },
-      Type: AWS::IAM::Policy,
-    },
-    MediaPackageVodRole931E8163: {
-      Metadata: {
-        cfn_nag: {
-          rules_to_suppress: [
-            {
-              id: W11,
-              reason: * is required to get objects from S3,
-            },
-          ],
+          OriginAccessControlOriginType: s3,
+          SigningBehavior: always,
+          SigningProtocol: sigv4,
         },
       },
-      Properties: {
-        AssumeRolePolicyDocument: {
-          Statement: [
-            {
-              Action: sts:AssumeRole,
-              Effect: Allow,
-              Principal: {
-                Service: mediapackage.amazonaws.com,
-              },
-            },
-          ],
-          Version: 2012-10-17,
-        },
-        Tags: [
-          {
-            Key: SolutionId,
-            Value: SO9674,
-          },
-        ],
-      },
-      Type: AWS::IAM::Role,
+      Type: AWS::CloudFront::OriginAccessControl,
     },
     OutputValidateLambda2645C4BB: {
       DependsOn: [
@@ -3956,31 +3402,24 @@ exports[`VideoOnDemand Stack Test 1`] = `
                   Arn,
                 ],
               },
-              "},"Archive Source Choice":{"Type":"Choice","Choices":[{"Variable":"$.archiveSource","StringEquals":"GLACIER","Next":"Archive"},{"Variable":"$.archiveSource","StringEquals":"DEEP_ARCHIVE","Next":"Deep Archive"}],"Default":"MediaPackage Choice"},"MediaPackage Choice":{"Type":"Choice","Choices":[{"Variable":"$.enableMediaPackage","BooleanEquals":true,"Next":"MediaPackage Assets"}],"Default":"DynamoDB Update (Publish)"},"Archive":{"Next":"MediaPackage Choice","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":",
-              {
-                Fn::GetAtt: [
-                  ArchiveSourceLambda320F09D9,
-                  Arn,
-                ],
-              },
-              "},"Deep Archive":{"Next":"MediaPackage Choice","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":",
-              {
-                Fn::GetAtt: [
-                  ArchiveSourceLambda320F09D9,
-                  Arn,
-                ],
-              },
-              "},"DynamoDB Update (Publish)":{"Next":"SQS Choice","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":",
+              "},"Archive Source Choice":{"Type":"Choice","Choices":[{"Variable":"$.archiveSource","StringEquals":"GLACIER","Next":"Archive"},{"Variable":"$.archiveSource","StringEquals":"DEEP_ARCHIVE","Next":"Deep Archive"}],"Default":"DynamoDB Update (Publish)"},"DynamoDB Update (Publish)":{"Next":"SQS Choice","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":",
               {
                 Fn::GetAtt: [
                   DynamoUpdateLambda0DF14C26,
                   Arn,
                 ],
               },
-              "},"MediaPackage Assets":{"Next":"DynamoDB Update (Publish)","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":",
+              "},"Archive":{"Next":"DynamoDB Update (Publish)","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":",
               {
                 Fn::GetAtt: [
-                  MediaPackageAssetsLambda63EB0986,
+                  ArchiveSourceLambda320F09D9,
+                  Arn,
+                ],
+              },
+              "},"Deep Archive":{"Next":"DynamoDB Update (Publish)","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":",
+              {
+                Fn::GetAtt: [
+                  ArchiveSourceLambda320F09D9,
                   Arn,
                 ],
               },
@@ -5541,32 +4980,6 @@ exports[`VideoOnDemand Stack Test 1`] = `
               Resource: [
                 {
                   Fn::GetAtt: [
-                    MediaPackageAssetsLambda63EB0986,
-                    Arn,
-                  ],
-                },
-                {
-                  Fn::Join: [
-                    ,
-                    [
-                      {
-                        Fn::GetAtt: [
-                          MediaPackageAssetsLambda63EB0986,
-                          Arn,
-                        ],
-                      },
-                      :*,
-                    ],
-                  ],
-                },
-              ],
-            },
-            {
-              Action: lambda:InvokeFunction,
-              Effect: Allow,
-              Resource: [
-                {
-                  Fn::GetAtt: [
                     SqsSendMessageLambda156FD22A,
                     Arn,
                   ],
@@ -5612,6 +5025,89 @@ exports[`VideoOnDemand Stack Test 1`] = `
       },
       Type: AWS::CloudFormation::CustomResource,
       UpdateReplacePolicy: Delete,
+    },
+    WebACL: {
+      Properties: {
+        DefaultAction: {
+          Allow: {},
+        },
+        Description: {
+          Fn::Join: [
+            ,
+            [
+              Web ACL for the ,
+              {
+                Ref: AWS::StackName,
+              },
+               CloudFront distribution,
+            ],
+          ],
+        },
+        Name: {
+          Fn::Join: [
+            ,
+            [
+              {
+                Ref: AWS::StackName,
+              },
+              -web-acl,
+            ],
+          ],
+        },
+        Rules: [
+          {
+            Name: AWSManagedRulesCommonRuleSet,
+            OverrideAction: {
+              None: {},
+            },
+            Priority: 0,
+            Statement: {
+              ManagedRuleGroupStatement: {
+                Name: AWSManagedRulesCommonRuleSet,
+                VendorName: AWS,
+              },
+            },
+            VisibilityConfig: {
+              CloudWatchMetricsEnabled: true,
+              MetricName: {
+                Fn::Join: [
+                  ,
+                  [
+                    {
+                      Ref: AWS::StackName,
+                    },
+                    -common-rule-set,
+                  ],
+                ],
+              },
+              SampledRequestsEnabled: true,
+            },
+          },
+        ],
+        Scope: CLOUDFRONT,
+        Tags: [
+          {
+            Key: SolutionId,
+            Value: SO9674,
+          },
+        ],
+        VisibilityConfig: {
+          CloudWatchMetricsEnabled: true,
+          MetricName: {
+            Fn::Join: [
+              ,
+              [
+                {
+                  Ref: AWS::StackName,
+                },
+                -web-acl,
+              ],
+            ],
+          },
+          SampledRequestsEnabled: true,
+        },
+      },
+      Type: AWS::WAFv2::WebACL,
     },
   },
 }

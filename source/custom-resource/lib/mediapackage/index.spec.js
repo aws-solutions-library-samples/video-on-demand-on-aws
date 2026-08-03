@@ -38,6 +38,8 @@ const validParameters = {
     GroupId: _groupId,
     PackagingConfigurations: 'HLS,DASH',
     DistributionId: testAssets.DistributionId,
+    CachePolicyId: 'cache-policy-id',
+    OriginRequestPolicyId: 'origin-request-policy-id',
     EnableMediaPackage: 'true'
 };
 

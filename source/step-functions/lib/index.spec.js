@@ -29,6 +29,16 @@ describe('#STEP FUNCTIONS::', () => {
         Records: [{
             s3: {
                 object: {
+                    key: '11111111-2222-3333-4444-555555555555/training.mp4',
+                }
+            }
+        }]
+    };
+
+    const _ingestWithoutUuid = {
+        Records: [{
+            s3: {
+                object: {
                     key: 'big_bunny.mp4',
                 }
             }
@@ -63,6 +73,20 @@ describe('#STEP FUNCTIONS::', () => {
 
         const response = await lambda.handler(_ingest);
         expect(response).to.equal('success');
+        const executionInput = sFNClientMock.commandCalls(StartExecutionCommand)[0].args[0].input;
+        expect(JSON.parse(executionInput.input).guid).to.equal('11111111-2222-3333-4444-555555555555');
+        expect(executionInput.name).to.equal('11111111-2222-3333-4444-555555555555');
+    });
+
+    it('should generate a guid when the ingest key does not embed a session uuid', async () => {
+        sFNClientMock.on(StartExecutionCommand).resolves(data);
+
+        const response = await lambda.handler(_ingestWithoutUuid);
+        expect(response).to.equal('success');
+        const executionInput = sFNClientMock.commandCalls(StartExecutionCommand)[0].args[0].input;
+        expect(JSON.parse(executionInput.input).guid).to.match(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        );
     });
 
     it('should return "success" on process Execute success', async () => {

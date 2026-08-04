@@ -15,6 +15,14 @@ const crypto = require('crypto');
 const { SFN: StepFunctions } = require("@aws-sdk/client-sfn");
 const error = require('./lib/error.js');
 
+const UUID_PREFIX_PATTERN =
+    /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i;
+
+function extractGuidFromS3Key(key) {
+    const match = key.match(UUID_PREFIX_PATTERN);
+    return match ? match[1] : null;
+}
+
 exports.handler = async (event) => {
     console.log(`REQUEST:: ${JSON.stringify(event, null, 2)}`);
 
@@ -30,10 +38,10 @@ exports.handler = async (event) => {
         switch (true) {
             case event.hasOwnProperty('Records'):
                 // Ingest workflow triggered by s3 event::
-                event.guid = crypto.randomUUID();
+                let key = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " "));
+                event.guid = extractGuidFromS3Key(key) || crypto.randomUUID();
 
                 // Identify file extention of s3 object::
-                let key = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " "));
                 if (key.slice((key.lastIndexOf(".") - 1 >>> 0) + 2) === 'json') {
                     event.workflowTrigger = 'Metadata';
                 } else {

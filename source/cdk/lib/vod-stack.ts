@@ -19,6 +19,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -85,6 +86,17 @@ export class VideoOnDemand extends cdk.Stack {
       default: 'Yes',
       allowedValues: ['Yes', 'No']
     });
+    const strapiWebhookUrl = new cdk.CfnParameter(this, 'StrapiWebhookUrl', {
+      type: 'String',
+      description: 'Strapi upload-session VOD webhook URL (leave blank to disable forwarding)',
+      default: ''
+    });
+    const strapiWebhookSecret = new cdk.CfnParameter(this, 'StrapiWebhookSecret', {
+      type: 'String',
+      description: 'Shared secret used to sign Strapi VOD webhook requests',
+      default: '',
+      noEcho: true
+    });
     const acceleratedTranscoding = new cdk.CfnParameter(this, 'AcceleratedTranscoding', {
       type: 'String',
       description: 'Enable accelerated transcoding in AWS Elemental MediaConvert. PREFERRED will only use acceleration if the input files is supported. ENABLED accleration is applied to all files (this will fail for unsupported file types) see MediaConvert Documentation for more detail https://docs.aws.amazon.com/mediaconvert/latest/ug/accelerated-transcoding.html',
@@ -104,7 +116,9 @@ export class VideoOnDemand extends cdk.Stack {
               workflowTrigger.logicalId,
               glacier.logicalId,
               enableSns.logicalId,
-              enableSqs.logicalId
+              enableSqs.logicalId,
+              strapiWebhookUrl.logicalId,
+              strapiWebhookSecret.logicalId
             ]
           },
           {
@@ -143,6 +157,12 @@ export class VideoOnDemand extends cdk.Stack {
           },
           EnableSqs: {
             default: 'Enable SQS Messaging'
+          },
+          StrapiWebhookUrl: {
+            default: 'Strapi VOD webhook URL'
+          },
+          StrapiWebhookSecret: {
+            default: 'Strapi VOD webhook secret'
           }
         }
       }
@@ -1649,6 +1669,50 @@ export class VideoOnDemand extends cdk.Stack {
     snsNotificationLambda.node.addDependency(snsNotificationRole);
     snsNotificationLambda.node.addDependency(snsNotificationPolicy);
 
+    /**
+     * Strapi webhook forwarder role and lambda
+     */
+    const strapiWebhookRole = new iam.Role(this, 'StrapiWebhookRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
+    });
+    const strapiWebhookPolicy = new iam.Policy(this, 'StrapiWebhookPolicy', {
+      policyName: `${cdk.Aws.STACK_NAME}-strapi-webhook-role`,
+      statements: [
+        new iam.PolicyStatement({
+          resources: [`arn:${cdk.Aws.PARTITION}:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:log-group:/aws/lambda/*`],
+          actions: [
+            'logs:CreateLogGroup',
+            'logs:CreateLogStream',
+            'logs:PutLogEvents'
+          ]
+        })
+      ]
+    });
+    strapiWebhookPolicy.attachToRole(strapiWebhookRole);
+
+    const strapiWebhookLambda = new lambda.Function(this, 'StrapiWebhookLambda', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: 'index.handler',
+      functionName: `${cdk.Aws.STACK_NAME}-strapi-webhook`,
+      description: 'Forward workflow notifications to the Strapi upload-session VOD webhook',
+      environment: {
+        SOLUTION_IDENTIFIER: `AwsSolution/${solutionId}/%%VERSION%%`,
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
+        StrapiWebhookUrl: strapiWebhookUrl.valueAsString,
+        StrapiWebhookSecret: strapiWebhookSecret.valueAsString
+      },
+      role: strapiWebhookRole,
+      code: lambda.Code.fromAsset('../strapi-webhook'),
+      timeout: cdk.Duration.seconds(30)
+    });
+    strapiWebhookLambda.node.addDependency(strapiWebhookRole);
+    strapiWebhookLambda.node.addDependency(strapiWebhookPolicy);
+
+    snsTopic.addSubscription(new subscriptions.LambdaSubscription(strapiWebhookLambda));
+    strapiWebhookLambda.addEventSource(new lambdaEventSources.SqsEventSource(sqsQueue, {
+      batchSize: 1
+    }));
+
     //cfn_nag
     const cfnSnsNotificationLambda = snsNotificationLambda.node.findChild('Resource') as lambda.CfnFunction;
     cfnSnsNotificationLambda.cfnOptions.metadata = {
@@ -1779,6 +1843,7 @@ export class VideoOnDemand extends cdk.Stack {
       cfnSqsSendMessageLambda,
       cfnSnsNotificationLambda,
       cfnStepFunctionsLambda,
+      strapiWebhookLambda.node.findChild('Resource') as lambda.CfnFunction,
     ].forEach(lambdaFunction => {
       NagSuppressions.addResourceSuppressions(
         lambdaFunction,

@@ -22,6 +22,12 @@ def parse_number(num):
     if num is None:
         return None
 
+    if isinstance(num, str) and ' / ' in num:
+        values = [value.strip() for value in num.split(' / ')]
+        if any(value != values[0] for value in values[1:]):
+            raise ValueError(f'Conflicting numeric values: {num}')
+        num = values[0]
+
     try:
         return int(num)
     except ValueError:

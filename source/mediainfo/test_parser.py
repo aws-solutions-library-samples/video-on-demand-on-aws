@@ -24,6 +24,13 @@ class TestParser(unittest.TestCase):
     def test_parse_float(self):
         self.assertEqual(function.parse_number(42.0), 42.0)
 
+    def test_parse_repeated_values(self):
+        self.assertEqual(function.parse_number('128000 / 128000'), 128000)
+
+    def test_parse_throws_when_repeated_values_conflict(self):
+        with self.assertRaises(ValueError):
+            function.parse_number('128000 / 129000')
+
     def test_parse_throws_when_number_is_invalid(self):
         with self.assertRaises(ValueError):
             function.parse_number('bogus')

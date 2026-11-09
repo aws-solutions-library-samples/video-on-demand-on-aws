@@ -28,9 +28,6 @@ import { VideoOnDemand } from '../lib/vod-stack';
 
 /** Managed CloudFront **CachingOptimized** cache policy id (blueprint: replaces the v6 maxTtl=0 policy). */
 const MANAGED_CACHING_OPTIMIZED_ID = '658327ea-f89d-4fab-a63d-7e88639e58f6';
-/** Managed **CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS** response-headers policy id.
- *  CORS (incl. preflight) + security headers; preflight is answered by the S3 origin (bucket CORS). */
-const MANAGED_CORS_SECURITY_HEADERS_ID = 'eaab4381-ed33-4a86-88ca-d9558dc6cd63';
 /** Managed **CORS-S3Origin** origin-request policy id (forwards Origin + Access-Control-Request-*). */
 const MANAGED_CORS_S3_ORIGIN_REQUEST_ID = '88a5eaf4-2fd4-4709-b370-b4c650ea3fcf';
 
@@ -418,7 +415,7 @@ describe('VideoOnDemand stack — CloudFront delivery', () => {
           IPV6Enabled: true,
           DefaultCacheBehavior: Match.objectLike({
             CachePolicyId: MANAGED_CACHING_OPTIMIZED_ID,
-            ResponseHeadersPolicyId: MANAGED_CORS_SECURITY_HEADERS_ID,
+            ResponseHeadersPolicyId: { Ref: Match.stringLikeRegexp('ResponseHeadersPolicy') },
           }),
         }),
       }),
@@ -461,10 +458,33 @@ describe('VideoOnDemand stack — CloudFront delivery', () => {
     );
   });
 
-  test('the custom maxTtl=0 CachePolicy (and any custom response-headers policy) is gone', () => {
+  test('the custom maxTtl=0 CachePolicy is gone (edge TTL comes from managed CachingOptimized)', () => {
+    synth().template.resourceCountIs('AWS::CloudFront::CachePolicy', 0);
+  });
+
+  test('one response-headers policy: CORS with preflight, security headers, viewer Cache-Control', () => {
     const { template } = synth();
-    template.resourceCountIs('AWS::CloudFront::CachePolicy', 0);
-    template.resourceCountIs('AWS::CloudFront::ResponseHeadersPolicy', 0);
+    template.resourceCountIs('AWS::CloudFront::ResponseHeadersPolicy', 1);
+    template.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
+      ResponseHeadersPolicyConfig: Match.objectLike({
+        CorsConfig: Match.objectLike({
+          AccessControlAllowOrigins: { Items: ['*'] },
+          AccessControlAllowMethods: { Items: ['GET', 'HEAD', 'OPTIONS'] },
+          AccessControlAllowCredentials: false,
+          OriginOverride: false,
+        }),
+        SecurityHeadersConfig: Match.objectLike({
+          ContentTypeOptions: { Override: true },
+          StrictTransportSecurity: Match.objectLike({ AccessControlMaxAgeSec: 31536000 }),
+        }),
+        // Account-unique name keyed on the physical stack name.
+        Name: Match.stringLikeRegexp('-playback-headers$'),
+        // Write-once playback objects: a day of viewer caching, never overriding an origin header.
+        CustomHeadersConfig: {
+          Items: [{ Header: 'Cache-Control', Value: 'public, max-age=86400', Override: false }],
+        },
+      }),
+    });
   });
 
   // geo-restriction + WAF are off by default (the GA delivery path).

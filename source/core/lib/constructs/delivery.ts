@@ -23,9 +23,9 @@
  *   - The v6 custom `maxTtl=0` `CachePolicy` is gone. Static CMAF manifests/segments are
  *     immutable per GUID prefix, so caching is desirable: this uses the AWS-managed
  *     **CachingOptimized** policy.
- *   - CORS is handled **natively** (no CloudFront Function / no Lambda): the managed
- *     **CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS** response-headers policy sets the
- *     CORS + security headers (HSTS, nosniff), the destination bucket carries an S3 CORS config so the
+ *   - CORS is handled **natively** (no CloudFront Function / no Lambda): a response-headers policy
+ *     (mirroring the managed CORS-with-preflight-and-SecurityHeadersPolicy, plus a viewer
+ *     `Cache-Control`) sets the CORS + security headers (HSTS, nosniff), the destination bucket carries an S3 CORS config so the
  *     origin answers the OPTIONS **preflight**, and the managed `CORS-S3Origin` origin-request policy
  *     forwards the CORS request headers to S3. (A response-headers policy alone cannot answer preflight
  *     for an S3/OAC origin — CloudFront forwards OPTIONS to S3, which 403s without origin CORS; verified
@@ -43,7 +43,7 @@
  */
 
 import { Construct } from 'constructs';
-import { Stack } from 'aws-cdk-lib';
+import { Duration, Stack } from 'aws-cdk-lib';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import { CloudFrontToS3 } from '@aws-solutions-constructs/aws-cloudfront-s3';
@@ -54,6 +54,9 @@ import { DeliveryConstructProps, IDeliveryConstruct } from './interfaces';
 
 /** Prefix under the shared logs bucket for the CloudFront standard access logs. */
 const CLOUDFRONT_LOG_PREFIX = 'cloudfront-logs/';
+
+/** Viewer (browser / player) Cache-Control for the write-once playback objects under `<guid>/`. */
+export const VIEWER_CACHE_CONTROL = 'public, max-age=86400';
 
 /** Map the validated context price-class literal to the CDK `cloudfront.PriceClass` enum. */
 const PRICE_CLASS_MAP: Readonly<Record<PriceClass, cloudfront.PriceClass>> = {
@@ -93,19 +96,52 @@ export class DeliveryConstruct extends Construct implements IDeliveryConstruct {
     // CORS for hls.js/dash.js cross-origin manifest/segment fetches, handled natively (no
     // CloudFront Function / no Lambda), per the AWS blog "CORS configuration through Amazon
     // CloudFront" (option 1 RHP + option 3 origin CORS). Three pieces work together:
-    //   1. `CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS` response-headers policy sets
-    //      the CORS headers (incl. preflight) + security headers (HSTS, nosniff) on responses.
+    //   1. The response-headers policy above sets the CORS headers (incl. preflight) + security
+    //      headers (HSTS, nosniff) on responses.
     //   2. The destination bucket has an S3 CORS config (StorageConstruct), so the ORIGIN answers the
     //      OPTIONS preflight — a response-headers policy alone cannot (CloudFront forwards OPTIONS to
     //      S3; without origin CORS, S3/OAC returns 403 and the browser preflight fails, verified live).
     //   3. The managed `CORS-S3Origin` origin-request policy forwards Origin / Access-Control-Request-*
     //      to S3 so it can evaluate the preflight. All origins are allowed uniformly (`*`), so the
     //      preflight response is identical for every viewer and safe to cache under CachingOptimized.
+    // Viewer caching: MediaConvert sets no Cache-Control on its S3 outputs, so without this players and
+    // browsers fall back to heuristic caching. Every object under `<guid>/` is write-once (a re-upload gets a
+    // new guid), so a day is safe; it is not a year because CloudFront adds custom headers to error
+    // responses too, and a 403 for a not-yet-published object must not stick in a browser for long. Viewer
+    // response only: the edge TTL still comes from CachingOptimized. An origin Cache-Control wins.
+    // CORS + security headers mirror the managed CORS-with-preflight-and-SecurityHeadersPolicy
+    // (eaab4381-ed33-4a86-88ca-d9558dc6cd63) exactly, apart from Allow-Methods narrowed to the methods
+    // the behavior serves.
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'ResponseHeadersPolicy', {
+      // Policy names are account-unique: key on the physical stack name so two stacks (different
+      // `stackName`, same construct id) can share an account. CloudFront caps names at 128 chars.
+      responseHeadersPolicyName: `${Stack.of(this).stackName}-playback-headers`.slice(0, 128),
+      comment: 'VOD playback - CORS with preflight, security headers, viewer Cache-Control',
+      corsBehavior: {
+        accessControlAllowOrigins: ['*'],
+        accessControlAllowHeaders: [],
+        accessControlAllowMethods: ['GET', 'HEAD', 'OPTIONS'],
+        accessControlAllowCredentials: false,
+        accessControlExposeHeaders: ['*'],
+        originOverride: false,
+      },
+      securityHeadersBehavior: {
+        contentTypeOptions: { override: true },
+        frameOptions: { frameOption: cloudfront.HeadersFrameOption.SAMEORIGIN, override: false },
+        referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN, override: false },
+        strictTransportSecurity: { accessControlMaxAge: Duration.seconds(31536000), override: false },
+        xssProtection: { protection: true, modeBlock: true, override: false },
+      },
+      customHeadersBehavior: {
+        customHeaders: [{ header: 'Cache-Control', value: VIEWER_CACHE_CONTROL, override: false }],
+      },
+    });
+
     const cloudFront = new CloudFrontToS3(this, 'CloudFrontToS3', {
       // Serve the transcoded CMAF output bucket via OAC (default) — no OAI is created.
       existingBucketObj: storage.destinationBucket,
-      // The construct's built-in security-header CloudFront Function is disabled; the managed
-      // CORS + security-headers response policy below supplies those headers instead.
+      // The construct's built-in security-header CloudFront Function is disabled; the CORS +
+      // security-headers response policy above supplies those headers instead.
       insertHttpSecurityHeaders: false,
       // Origin bucket access logging is owned by StorageConstruct; do not have the construct
       // attach its own S3 access-log bucket to the (existing) origin bucket.
@@ -119,9 +155,8 @@ export class DeliveryConstruct extends Construct implements IDeliveryConstruct {
           // Byte-range (Range GET) requests are served natively for the S3 origin — no config needed;
           // the single-file CMAF output (HLS #EXT-X-BYTERANGE, DASH <SegmentBase>) relies on this.
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-          // Managed CORS **with preflight** + security headers on all responses.
-          responseHeadersPolicy:
-            cloudfront.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS,
+          // CORS **with preflight** + security headers + viewer Cache-Control on all responses.
+          responseHeadersPolicy,
           // Forward Origin + Access-Control-Request-* to S3 so the origin can answer the preflight.
           originRequestPolicy: cloudfront.OriginRequestPolicy.CORS_S3_ORIGIN,
         },

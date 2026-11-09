@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it in `.env`). It ends with a review screen and offers to run `scripts/deploy-wizard.sh`.
 - The wizard helpers are shared by both wizards in `scripts/lib/wizard.sh`, with a smoke test
   (`scripts/lib/wizard.test.sh`).
+- **Playback responses carry `Cache-Control: public, max-age=86400`.** MediaConvert sets no `Cache-Control`
+  on its S3 outputs, so players and browsers fell back to heuristic caching. The distribution now uses its
+  own response-headers policy (`<stackName>-playback-headers`) with the same CORS-with-preflight and
+  security headers as the managed `CORS-with-preflight-and-SecurityHeadersPolicy` it replaces, CORS
+  `Allow-Methods` narrowed to `GET, HEAD, OPTIONS`, and the viewer `Cache-Control` (an origin header wins).
+  A day, not a year, because CloudFront adds the header to 403/404 responses too. Edge TTLs are unchanged
+  (managed CachingOptimized). Adds one `AWS::CloudFront::ResponseHeadersPolicy` resource.
 
 ### Fixed
 
@@ -64,6 +71,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after the Orchestrator execution. The re-drive's `DeleteItem` is now conditional on
   `workflowStatus = Error` (a concurrent re-drive gets 409), and if `StartExecution` then fails the cleared
   record is written to the Lambda log.
+- CMS: the page went blank on expanding *Per-frame quality metrics* in a tab opened before a CMS
+  redeploy. The redeploy deleted the content-hashed chunks the old page referenced, the lazy chart import
+  failed, and with no error boundary React unmounted the app. `source/cms/scripts/deploy-all.sh` now
+  uploads `assets/` as `max-age=31536000, immutable` and `index.html` as `no-cache` (new bundles before
+  the HTML, then prune); the app reloads once onto the new build on `vite:preloadError`; and the chart sits
+  in an error boundary that shows a warning instead.
 
 ## [7.0.0] - Unreleased
 

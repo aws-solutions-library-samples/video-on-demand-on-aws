@@ -18,7 +18,7 @@ updates:
           - "@aws-solutions-constructs/*"
           - cdk-nag
 
-  # GitHub Actions used by the CI and CodeQL workflows (keeps SHA pins fresh).
+  # GitHub Actions used by the CI workflow (keeps SHA pins fresh).
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

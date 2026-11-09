@@ -1,0 +1,16 @@
+.DS_Store
+vscode/
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+# Deploy-time parameters (secrets/PII); commit .env.example, never .env
+.env
+
+# Parcel default cache directory
+.parcel-cache

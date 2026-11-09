@@ -1,0 +1,111 @@
+name: CI
+
+# Validation-only CI: install the npm workspaces once, build + unit-test every package, and run
+# `cdk synth` (which runs the AwsSolutionsChecks cdk-nag aspect) for the core CDK app.
+# No AWS credentials and no deploy - this workflow only proves the packages compile,
+# tests pass, and synth stays clean of nag findings.
+#
+# All packages (source/contract, source/core, source/cms/*) are npm workspaces sharing the
+# root package-lock.json, so there is a single install and `--workspaces` fans out build/test.
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:            # pull_request (NOT pull_request_target): fork PRs run with a
+    branches: [main, "release/**"]   # read-only token and no access to secrets.
+
+# Least-privilege default for the whole workflow; jobs need only checkout.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref so rapid PR pushes don't pile up.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build + unit-test every workspace package.
+  test:
+    name: Build + unit tests (all workspaces)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+          disable-sudo: true
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies (npm ci, all workspaces)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Companion modules (separate workspaces root)
+        working-directory: source/modules
+        run: npm ci && npm run build && npm test
+
+  # CDK synth gate, per CDK app: synth must succeed AND stay clean of cdk-nag (AwsSolutionsChecks)
+  # findings. cdk-nag emits error-level annotations for unsuppressed findings, which make `cdk synth`
+  # exit non-zero - so a clean synth is the nag gate. scripts/synth-matrix.sh synthesizes each app
+  # across its context matrix (every overlay combination for the core stack) with placeholder inputs.
+  synth:
+    name: CDK synth + cdk-nag gate (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - source/core
+          - source/cms/backend
+          - source/modules/waf
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+          disable-sudo: true
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies (npm ci, all workspaces)
+        run: npm ci
+
+      - name: Install companion modules
+        if: startsWith(matrix.app, 'source/modules/')
+        run: npm ci --prefix source/modules
+
+      - name: Synthesize the context matrix (enforces cdk-nag / AwsSolutionsChecks)
+        env:
+          APP: ${{ matrix.app }}
+        run: scripts/synth-matrix.sh "$APP" "$RUNNER_TEMP/templates"

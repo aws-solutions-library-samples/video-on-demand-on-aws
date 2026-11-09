@@ -1,0 +1,274 @@
+{
+  "Comment": "VOD Process stage (native integrations, no Lambda): a child of the Orchestrator state machine. Select the probed VIDEO track height, choose the sd|hd|uhd tier (with optional metadata override), submit a single static-CMAF (HLS+DASH) Automated-ABR MediaConvert job via createJob.sync, and record outputs + playback URLs in DynamoDB. Its state is returned as Output for the orchestrator to forward to Publish. The MediaConvert account endpoint ${MEDIACONVERT_ENDPOINT} is resolved automatically by the optimized createJob.sync integration, so it is not passed as a Task parameter. On any failure it ends in the Fail state, which propagates the error/cause to the orchestrator's Catch.",
+  "StartAt": "Extract Video Metadata",
+  "States": {
+    "Extract Video Metadata": {
+      "Type": "Pass",
+      "QueryLanguage": "JSONata",
+      "Comment": "MediaConvert Probe does not guarantee the video track is first in Tracks[] (e.g. audio-first MP4s list audio at index 0), so a fixed Tracks[0] path can miss the video. Select the track whose TrackType is 'video' and normalize its height into $.videoHeight; the tier Choice reads $.videoHeight so it works regardless of track order. When no video track is present the field is absent, routing to Unsupported Source.",
+      "Output": "{% $merge([$states.input, {'videoHeight': ([$states.input.probe.ProbeResults[0].Container.Tracks[TrackType = 'video'].VideoProperties.Height])[0]}]) %}",
+      "Next": "Check Video Track"
+    },
+    "Check Video Track": {
+      "Type": "Choice",
+      "Comment": "Only proceed for probe results that contain a decodable video track (height normalized by Extract Video Metadata).",
+      "Choices": [
+        {
+          "Variable": "$.videoHeight",
+          "IsPresent": true,
+          "Next": "Choose Tier"
+        }
+      ],
+      "Default": "Unsupported Source"
+    },
+    "Unsupported Source": {
+      "Type": "Pass",
+      "Comment": "Set an error object for the Fail state (and, in turn, the orchestrator) when the upload has no probeable video track.",
+      "Parameters": {
+        "Error": "UnsupportedSource",
+        "Cause": "The uploaded object does not contain a probeable video track."
+      },
+      "ResultPath": "$.error",
+      "Next": "Process Failed"
+    },
+    "Choose Tier": {
+      "Type": "Choice",
+      "Comment": "Map source to a quality tier by probed height - SD below 720 (e.g. 480/576), HD from 720 up to 1080 (< 1440), UHD at 1440 and above (the Default). Three static per-tier templates are kept so each can carry a tier-appropriate maxAbrBitrate / max-resolution ceiling. (FUTURE - 'per-title encoding': a per-asset tier/ladder selection driven by source metadata, replacing the removed stack-wide tierOverride switch.)",
+      "Choices": [
+        {
+          "Variable": "$.videoHeight",
+          "NumericLessThan": 720,
+          "Next": "Tier SD"
+        },
+        {
+          "Variable": "$.videoHeight",
+          "NumericLessThan": 1440,
+          "Next": "Tier HD"
+        }
+      ],
+      "Default": "Tier UHD"
+    },
+    "Tier SD": {
+      "Type": "Pass",
+      "Result": "sd",
+      "ResultPath": "$.tier",
+      "Next": "Encode SD"
+    },
+    "Tier HD": {
+      "Type": "Pass",
+      "Result": "hd",
+      "ResultPath": "$.tier",
+      "Next": "Encode HD"
+    },
+    "Tier UHD": {
+      "Type": "Pass",
+      "Result": "uhd",
+      "ResultPath": "$.tier",
+      "Next": "Encode UHD"
+    },
+    "Encode SD": {
+      "Type": "Task",
+      "Comment": "Submit the SD MediaConvert job and block to completion via the optimized createJob.sync integration. The JOB_SETTINGS_SD placeholder is replaced at synth time with the full sd MediaConvert Settings object (single CMAF HLS+DASH output group, Automated ABR, QVBR + MULTI_PASS_HQ; video + audio only - captions are a deferred opt-in overlay); that injected object carries the runtime FileInput (source URI) and CMAF Destination (s3://.../<guid>/index) reference paths.",
+      "Resource": "arn:aws:states:::mediaconvert:createJob.sync",
+      "TimeoutSeconds": 3600,
+      "Parameters": {
+        "Role": "${MEDIACONVERT_ROLE_ARN}",
+        "Queue": "${MEDIACONVERT_QUEUE_ARN}",
+        "UserMetadata": {
+          "guid.$": "$.guid",
+          "workflow": "${STACK_NAME}"
+        },
+        "Tags": { "SolutionId": "SO9674" },
+        "Settings": "${JOB_SETTINGS_SD}"
+      },
+      "ResultPath": "$.jobOutput",
+      "Retry": [
+        {
+          "ErrorEquals": ["MediaConvert.TooManyRequestsException"],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 5
+        },
+        {
+          "ErrorEquals": [
+            "MediaConvert.InternalServerErrorException",
+            "MediaConvert.ConflictException"
+          ],
+          "IntervalSeconds": 15,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Process Failed"
+        }
+      ],
+      "Next": "Build Playback URLs"
+    },
+    "Encode HD": {
+      "Type": "Task",
+      "Comment": "Submit the HD MediaConvert job (createJob.sync). The JOB_SETTINGS_HD placeholder is the injected hd Settings object (see Encode SD).",
+      "Resource": "arn:aws:states:::mediaconvert:createJob.sync",
+      "TimeoutSeconds": 7200,
+      "Parameters": {
+        "Role": "${MEDIACONVERT_ROLE_ARN}",
+        "Queue": "${MEDIACONVERT_QUEUE_ARN}",
+        "UserMetadata": {
+          "guid.$": "$.guid",
+          "workflow": "${STACK_NAME}"
+        },
+        "Tags": { "SolutionId": "SO9674" },
+        "Settings": "${JOB_SETTINGS_HD}"
+      },
+      "ResultPath": "$.jobOutput",
+      "Retry": [
+        {
+          "ErrorEquals": ["MediaConvert.TooManyRequestsException"],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 5
+        },
+        {
+          "ErrorEquals": [
+            "MediaConvert.InternalServerErrorException",
+            "MediaConvert.ConflictException"
+          ],
+          "IntervalSeconds": 15,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Process Failed"
+        }
+      ],
+      "Next": "Build Playback URLs"
+    },
+    "Encode UHD": {
+      "Type": "Task",
+      "Comment": "Submit the UHD MediaConvert job (createJob.sync). The JOB_SETTINGS_UHD placeholder is the injected uhd Settings object (see Encode SD).",
+      "Resource": "arn:aws:states:::mediaconvert:createJob.sync",
+      "TimeoutSeconds": 14400,
+      "Parameters": {
+        "Role": "${MEDIACONVERT_ROLE_ARN}",
+        "Queue": "${MEDIACONVERT_QUEUE_ARN}",
+        "UserMetadata": {
+          "guid.$": "$.guid",
+          "workflow": "${STACK_NAME}"
+        },
+        "Tags": { "SolutionId": "SO9674" },
+        "Settings": "${JOB_SETTINGS_UHD}"
+      },
+      "ResultPath": "$.jobOutput",
+      "Retry": [
+        {
+          "ErrorEquals": ["MediaConvert.TooManyRequestsException"],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 5
+        },
+        {
+          "ErrorEquals": [
+            "MediaConvert.InternalServerErrorException",
+            "MediaConvert.ConflictException"
+          ],
+          "IntervalSeconds": 15,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Process Failed"
+        }
+      ],
+      "Next": "Build Playback URLs"
+    },
+    "Build Playback URLs": {
+      "Type": "Pass",
+      "Comment": "Derive the CloudFront HLS/DASH playback URLs and the S3-relative manifest keys from the deterministic destination (s3://<dest>/<guid>/index). No GetJob call and no Lambda are needed - the destination naming is a contract with the injected JOB_SETTINGS_* Settings object (CMAF base name 'index'). Passes toggles and identifiers forward to Publish.",
+      "Parameters": {
+        "guid.$": "$.guid",
+        "srcBucket.$": "$.srcBucket",
+        "srcVideo.$": "$.srcVideo",
+        "fileUri.$": "$.fileUri",
+        "destBucket": "${DESTINATION_BUCKET}",
+        "startTime.$": "$.startTime",
+        "workflowName.$": "$.workflowName",
+        "config.$": "$.config",
+        "tier.$": "$.tier",
+        "videoHeight.$": "$.videoHeight",
+        "encodeJobId.$": "$.jobOutput.Job.Id",
+        "hlsManifest.$": "States.Format('{}/index.m3u8', $.guid)",
+        "dashManifest.$": "States.Format('{}/index.mpd', $.guid)",
+        "hlsUrl.$": "States.Format('https://${CLOUDFRONT_DOMAIN}/{}/index.m3u8', $.guid)",
+        "dashUrl.$": "States.Format('https://${CLOUDFRONT_DOMAIN}/{}/index.mpd', $.guid)",
+        "destinationS3.$": "States.Format('s3://${DESTINATION_BUCKET}/{}/', $.guid)",
+        "outputsSummary.$": "States.Format('HLS:  https://${CLOUDFRONT_DOMAIN}/{}/index.m3u8\nDASH: https://${CLOUDFRONT_DOMAIN}/{}/index.mpd', $.guid, $.guid)"
+      },
+      "ResultPath": "$",
+      "Next": "Record Job"
+    },
+    "Record Job": {
+      "Type": "Task",
+      "Comment": "Update the DynamoDB job record with encode outputs and playback URLs via the native integration (no Lambda). Keyed on the guid partition key.",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TableName": "${DYNAMODB_TABLE}",
+        "Key": {
+          "guid": { "S.$": "$.guid" }
+        },
+        "UpdateExpression": "SET workflowStatus = :s, srcHeight = :h, tier = :tr, encodeJobId = :j, hlsUrl = :hls, dashUrl = :dash, hlsManifest = :hlsm, dashManifest = :dashm",
+        "ExpressionAttributeValues": {
+          ":s": { "S": "Encoding" },
+          ":h": { "N.$": "States.Format('{}', $.videoHeight)" },
+          ":tr": { "S.$": "$.tier" },
+          ":j": { "S.$": "$.encodeJobId" },
+          ":hls": { "S.$": "$.hlsUrl" },
+          ":dash": { "S.$": "$.dashUrl" },
+          ":hlsm": { "S.$": "$.hlsManifest" },
+          ":dashm": { "S.$": "$.dashManifest" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "DynamoDB.ThrottlingException",
+            "DynamoDB.InternalServerErrorException",
+            "DynamoDB.ProvisionedThroughputExceededException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Process Failed"
+        }
+      ],
+      "Next": "Process Complete"
+    },
+    "Process Complete": {
+      "Type": "Succeed"
+    },
+    "Process Failed": {
+      "Type": "Fail",
+      "Comment": "Propagate the specific error/cause to the orchestrator's Catch (which owns the single Error record + SNS notification). ErrorPath/CausePath surface the dynamic $.error set by the failing state.",
+      "ErrorPath": "$.error.Error",
+      "CausePath": "$.error.Cause"
+    }
+  }
+}

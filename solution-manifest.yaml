@@ -1,6 +1,6 @@
 id: SO9674
 name: video-on-demand-on-aws
-version: v6.1.18
+version: v7.0.0
 cloudformation_templates:
   - template: video-on-demand-on-aws.template
     main_template: true

@@ -36,6 +36,41 @@ codescan-unified-default.sh
 # Kiro IDE
 .kiro/
 
-# Stray package-lock files
-/package-lock.json
-/source/package-lock.json
+# npm workspaces use ONE lockfile per workspaces root; per-package lockfiles are strays
+/source/**/package-lock.json
+!/source/modules/package-lock.json
+
+# Environment variables. Deploy config lives in the repo-root .env (copy .env.example); never commit it.
+.env
+.env.*
+.env.local
+.env.secret
+!.env.example
+
+# Playwright MCP browser artifacts (local test output)
+**/.playwright-mcp/
+
+# Office lock/temp files
+~$*
+
+# Claude Code local worktrees (embedded git repos — never commit)
+**/.claude/worktrees/
+
+# Local sample ad creative videos (uploaded straight to S3 by hand, not shipped in the repo)
+source/cms/frontend/public/ad-creatives/
+
+# Local agent notes (internal; the public guide is AGENTS.md)
+CLAUDE.local.md
+.claude/
+
+# scripts/synth-matrix.sh scratch copies
+.synth-matrix.*
+
+# run-unit-tests.sh output
+deployment/coverage-reports/
+
+# Internal dev-account verification wizard (reads live secrets from .env; never committed).
+scripts/verify-dev-wizard.sh
+
+# ProtoShield security-scan output (local reports, .protoshield/scans)
+**/.protoshield/

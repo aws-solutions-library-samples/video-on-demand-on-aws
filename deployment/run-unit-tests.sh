@@ -1,4 +1,8 @@
 #!/bin/bash
+#
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 
 [ "$DEBUG" == 'true' ] && set -x
 set -e
@@ -16,6 +20,7 @@ prepare_jest_coverage_report() {
   mkdir -p "$coverage_reports_top_path/jest"
   coverage_report_path="$coverage_reports_top_path/jest/$component_name"
   rm -fr "$coverage_report_path"
+  mkdir -p "$(dirname "$coverage_report_path")"
   mv coverage "$coverage_report_path"
 }
 
@@ -29,9 +34,7 @@ run_javascript_test() {
   echo "cd $component_path"
   cd "$component_path"
 
-  # install dependencies
-  npm install --silent
-  # run unit tests
+  # run unit tests (dependencies are installed once for all npm workspaces, below)
   npm test
 
   # prepare coverage reports
@@ -41,61 +44,40 @@ run_javascript_test() {
 # Get reference for all important folders
 template_dir="$PWD"
 source_dir="$template_dir/../source"
-coverage_reports_top_path="$source_dir/test/coverage-reports"
+coverage_reports_top_path="$template_dir/coverage-reports"
 
-# Test the attached Lambda function
-declare -a lambda_packages=(
-  "cdk"
-  "custom-resource"
-  "archive-source"
-  "dynamo"
-  "encode"
-  "error-handler"
-  "input-validate"
-  "media-package-assets"
-  "output-validate"
-  "profiler"
-  "sns-notification"
-  "sqs-publish"
-  "step-functions"
+# The core packages are npm workspaces sharing one root lockfile: install + build once, then test each.
+(cd "$source_dir/.." && npm ci && npm run build)
+
+# Workspace paths under source/, in dependency order.
+declare -a packages=(
+  "contract"
+  "core"
 )
 
-for lambda_package in "${lambda_packages[@]}"
+# Companion modules, when present, are a separate workspaces root (source/modules) with its own lockfile.
+if [ -f "$source_dir/modules/package.json" ]; then
+  (cd "$source_dir/modules" && npm ci && npm run build)
+  for module in drm waf ssai; do
+    if [ -d "$source_dir/modules/$module" ]; then packages+=("modules/$module"); fi
+  done
+fi
+
+for package in "${packages[@]}"
 do
-  rm -rf "$source_dir/$lambda_package/coverage"
-  mkdir "$source_dir/$lambda_package/coverage"
-  run_javascript_test "$source_dir/$lambda_package" $lambda_package
+  rm -rf "$source_dir/$package/coverage"
+  mkdir "$source_dir/$package/coverage"
+  run_javascript_test "$source_dir/$package" $package
 
   # Check the result of the test and exit if a failure is identified
   if [ $? -eq 0 ]
   then
-    echo "Test for $lambda_package passed"
+    echo "Test for $package passed"
   else
     echo "******************************************************************************"
-    echo "Lambda test FAILED for $lambda_package"
+    echo "Test FAILED for $package"
     echo "******************************************************************************"
     exit 1
   fi
 
 done
-
-
-echo "------------------------------------------------------------------------------"
-echo "[Test] Run python unit test with coverage for mediainfo"
-echo "------------------------------------------------------------------------------"
-echo "cd $source_dir/mediainfo"
-# If you're running these commands on macOS and Python3 has been installed using Homebrew, you might see this issue:
-#    DistutilsOptionError: must supply either home or prefix/exec-prefix
-# Please follow the workaround suggested on this StackOverflow answer: https://stackoverflow.com/a/44728772
-cd ../mediainfo
-pip3 install boto3 -t ./pytests --quiet
-pip3 install pytest --quiet
-pip3 install pytest-cov --quiet
-
-rm -rf coverage
-pytest --cov=. --cov-report xml:coverage/coverage.xml
-# fix source file path
-sed -i -- 's/filename\=\"/filename\=\"source\/mediainfo\//g' coverage/coverage.xml
-mkdir -p "$coverage_reports_top_path/pytest"
-mv coverage "$coverage_reports_top_path/pytest/mediainfo"
-rm -rf pytests

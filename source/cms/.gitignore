@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+cdk.out/
+*.tsbuildinfo
+
+# CDK/compiled JS (source is TS)
+backend/*.js
+!backend/jest.config.js
+backend/bin/*.js
+backend/lib/*.js
+backend/*.d.ts
+backend/bin/*.d.ts
+backend/lib/*.d.ts
+backend/extensions/**/*.js
+backend/extensions/**/*.d.ts
+
+# Local env (Cognito/API config written by scripts/deploy-all.sh)
+.env
+.env.local
+frontend/.env

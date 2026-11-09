@@ -1,6 +1,0 @@
-[run]
-relative_files = True
-source = .
-omit =
-    setup.py
-    test_*.py

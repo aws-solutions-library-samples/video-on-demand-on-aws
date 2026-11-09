@@ -1,0 +1,42 @@
+{
+  "name": "vod-cms-frontend",
+  "version": "7.0.0",
+  "description": "Cognito-authenticated operator web app for the VOD guidance (Vite + React + Cloudscape + Amplify Authenticator).",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@aws-amplify/ui-react": "^6.5.0",
+    "@cloudscape-design/components": "^3.0.900",
+    "@cloudscape-design/global-styles": "^1.0.34",
+    "aws-amplify": "^6.6.0",
+    "dashjs": "^4.7.4",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
+    "hls.js": "^1.5.17",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^6.0.7",
+    "vitest": "^5.0.1"
+  }
+}

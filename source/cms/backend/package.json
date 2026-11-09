@@ -1,0 +1,32 @@
+{
+  "name": "vod-cms-backend",
+  "version": "7.0.0",
+  "description": "Cognito auth + authenticated API for the VOD operator web app (optional companion stack; not part of the GA transcoding stack).",
+  "license": "Apache-2.0",
+  "private": true,
+  "bin": {
+    "cms": "bin/cms.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy --all --require-approval never",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "aws-cdk": "^2.1141.0",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@vod/contract": "7.0.0",
+    "aws-cdk-lib": "^2.268.0",
+    "cdk-nag": "^2.38.2",
+    "constructs": "^10.3.0"
+  }
+}

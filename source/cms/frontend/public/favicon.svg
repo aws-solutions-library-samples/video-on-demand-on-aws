@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#232f3e"/>
+  <!-- AWS smile: orange swoosh sweeping up to an arrowhead on the right -->
+  <path d="M6 15.5 Q15 23.5 23 17.8" fill="none" stroke="#ff9900" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M20 15.2 L24.6 16.4 L22.4 20.4 Z" fill="#ff9900"/>
+</svg>

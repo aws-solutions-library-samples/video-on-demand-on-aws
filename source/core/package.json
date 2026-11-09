@@ -1,0 +1,36 @@
+{
+  "name": "@vod/core",
+  "description": "Synthesize templates for Video on Demand on AWS using AWS Cloud Development Kit (CDK).",
+  "license": "Apache-2.0",
+  "version": "7.0.0",
+  "author": {
+    "name": "Amazon Web Services",
+    "url": "https://aws.amazon.com/solutions"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest --coverage",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "@types/prettier": "^3.0.0",
+    "aws-cdk": "^2.1141.0",
+    "cdk-nag": "^2.38.2",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.14",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@aws-solutions-constructs/aws-cloudfront-s3": "^2.104.0",
+    "@vod/contract": "7.0.0",
+    "aws-cdk-lib": "^2.268.0",
+    "constructs": "^10.6.0",
+    "dotenv": "^16.6.1",
+    "source-map-support": "^0.5.21"
+  },
+  "private": true
+}

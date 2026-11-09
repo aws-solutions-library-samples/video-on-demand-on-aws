@@ -1,0 +1,126 @@
+{
+    "TimecodeConfig": {
+        "Source": "ZEROBASED"
+    },
+    "Inputs": [
+        {
+            "FileInput": "${INPUT_URI}",
+            "TimecodeSource": "ZEROBASED",
+            "VideoSelector": {
+                "Rotate": "AUTO",
+                "ColorSpace": "FOLLOW"
+            },
+            "AudioSelectors": {
+                "Audio Selector 1": {
+                    "DefaultSelection": "DEFAULT"
+                }
+            }
+        }
+    ],
+    "OutputGroups": [
+        {
+            "Name": "CMAF",
+            "AutomatedEncodingSettings": {
+                "AbrSettings": {
+                    "MaxAbrBitrate": 16000000,
+                    "MinAbrBitrate": 800000,
+                    "MaxRenditions": 8
+                }
+            },
+            "OutputGroupSettings": {
+                "Type": "CMAF_GROUP_SETTINGS",
+                "CmafGroupSettings": {
+                    "Destination": "${DESTINATION}",
+                    "SegmentControl": "SINGLE_FILE",
+                    "SegmentLength": 6,
+                    "SegmentLengthControl": "GOP_MULTIPLE",
+                    "FragmentLength": 2,
+                    "MinFinalSegmentLength": 1,
+                    "ManifestDurationFormat": "FLOATING_POINT",
+                    "MpdProfile": "MAIN_PROFILE",
+                    "CodecSpecification": "RFC_6381",
+                    "StreamInfResolution": "INCLUDE",
+                    "ManifestCompression": "NONE",
+                    "WriteHlsManifest": "ENABLED",
+                    "WriteDashManifest": "ENABLED",
+                    "WriteSegmentTimelineInRepresentation": "ENABLED"
+                }
+            },
+            "Outputs": [
+                {
+                    "NameModifier": "_video",
+                    "ContainerSettings": {
+                        "Container": "CMFC",
+                        "CmfcSettings": {
+                            "AudioRenditionSets": "program_audio"
+                        }
+                    },
+                    "VideoDescription": {
+                        "Width": 3840,
+                        "Height": 2160,
+                        "ScalingBehavior": "DEFAULT",
+                        "AntiAlias": "ENABLED",
+                        "Sharpness": 50,
+                        "TimecodeInsertion": "DISABLED",
+                        "AfdSignaling": "NONE",
+                        "RespondToAfd": "NONE",
+                        "DropFrameTimecode": "ENABLED",
+                        "ColorMetadata": "INSERT",
+                        "CodecSettings": {
+                            "Codec": "H_265",
+                            "H265Settings": {
+                                "RateControlMode": "QVBR",
+                                "QualityTuningLevel": "MULTI_PASS_HQ",
+                                "CodecProfile": "MAIN_MAIN",
+                                "CodecLevel": "AUTO",
+                                "InterlaceMode": "PROGRESSIVE",
+                                "FramerateControl": "INITIALIZE_FROM_SOURCE",
+                                "GopSize": 2,
+                                "GopSizeUnits": "SECONDS",
+                                "GopClosedCadence": 1,
+                                "GopBReference": "ENABLED",
+                                "NumberBFramesBetweenReferenceFrames": 3,
+                                "NumberReferenceFrames": 3,
+                                "MinIInterval": 0,
+                                "SceneChangeDetect": "TRANSITION_DETECTION",
+                                "AdaptiveQuantization": "AUTO",
+                                "SampleAdaptiveOffsetFilterMode": "ADAPTIVE",
+                                "WriteMp4PackagingType": "HVC1"
+                            }
+                        }
+                    }
+                },
+                {
+                    "NameModifier": "_audio",
+                    "ContainerSettings": {
+                        "Container": "CMFC",
+                        "CmfcSettings": {
+                            "AudioGroupId": "program_audio",
+                            "AudioTrackType": "ALTERNATE_AUDIO_AUTO_SELECT_DEFAULT",
+                            "AudioDuration": "DEFAULT_CODEC_DURATION"
+                        }
+                    },
+                    "AudioDescriptions": [
+                        {
+                            "AudioSourceName": "Audio Selector 1",
+                            "LanguageCodeControl": "FOLLOW_INPUT",
+                            "CodecSettings": {
+                                "Codec": "AAC",
+                                "AacSettings": {
+                                    "Bitrate": 128000,
+                                    "CodingMode": "CODING_MODE_2_0",
+                                    "SampleRate": 48000,
+                                    "RateControlMode": "CBR",
+                                    "CodecProfile": "LC",
+                                    "RawFormat": "NONE",
+                                    "Specification": "MPEG4",
+                                    "AudioDescriptionBroadcasterMix": "NORMAL"
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

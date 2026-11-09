@@ -1,0 +1,25 @@
+{
+  "name": "video-on-demand-on-aws",
+  "version": "7.0.0",
+  "description": "Guidance for Video on Demand on AWS (SO9674): npm workspaces root for the core stack and the operator CMS.",
+  "license": "Apache-2.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "source/contract",
+    "source/core",
+    "source/cms/backend",
+    "source/cms/frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "overrides": {
+    "aws-cdk-lib": "2.268.0",
+    "constructs": "10.6.0"
+  }
+}

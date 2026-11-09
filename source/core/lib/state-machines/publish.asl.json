@@ -1,0 +1,229 @@
+{
+  "Comment": "VOD Publish stage (native integrations, no Lambda): a child of the Orchestrator state machine. Validate the encode output, optionally tag the source object for Glacier archival (a bucket lifecycle rule performs the transition), record the terminal status in DynamoDB, then notify via native SNS and optional SQS. Validation/tagging/record failures end in the Fail state, which propagates the error/cause to the orchestrator's Catch (the orchestrator owns the single Error record + failure notification). Best-effort success notifications (SQS/SNS) that fail after the item is already Complete do not flip the asset to Error.",
+  "StartAt": "Validate Output",
+  "States": {
+    "Validate Output": {
+      "Type": "Choice",
+      "Comment": "Native output validation: the HLS and DASH playback URLs must be present (built by the Process stage after createJob.sync reached COMPLETE). Missing URLs route to the Fail state.",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.hlsUrl",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.dashUrl",
+              "IsPresent": true
+            }
+          ],
+          "Next": "Archive Source Choice"
+        }
+      ],
+      "Default": "Invalid Output"
+    },
+    "Invalid Output": {
+      "Type": "Pass",
+      "Comment": "Set an error object for the Fail state (and, in turn, the orchestrator) when the expected CMAF playback URLs are absent.",
+      "Parameters": {
+        "Error": "InvalidOutput",
+        "Cause": "Expected HLS/DASH playback URLs were not present on the Publish input."
+      },
+      "ResultPath": "$.error",
+      "Next": "Publish Failed"
+    },
+    "Archive Source Choice": {
+      "Type": "Choice",
+      "Comment": "Archive the source object only when an archive class is selected. GLACIER and DEEP_ARCHIVE tag the object so the bucket lifecycle rule (keyed on the ${STACK_NAME} tag) transitions it; NONE skips straight to the DynamoDB update. No archive-source Lambda.",
+      "Choices": [
+        {
+          "Variable": "$.config.archiveSource",
+          "StringEquals": "GLACIER",
+          "Next": "Tag Source"
+        },
+        {
+          "Variable": "$.config.archiveSource",
+          "StringEquals": "DEEP_ARCHIVE",
+          "Next": "Tag Source"
+        }
+      ],
+      "Default": "Record Publish"
+    },
+    "Tag Source": {
+      "Type": "Task",
+      "Comment": "Native S3 object tagging (arn:aws:states:::aws-sdk:s3:putObjectTagging). The tag key is the stack name and the value is the archive class, matching the bucket lifecycle rule's tag filter; the lifecycle rule performs the Glacier / Deep Archive transition.",
+      "Resource": "arn:aws:states:::aws-sdk:s3:putObjectTagging",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "Bucket.$": "$.srcBucket",
+        "Key.$": "$.srcVideo",
+        "Tagging": {
+          "TagSet": [
+            {
+              "Key": "${STACK_NAME}",
+              "Value.$": "$.config.archiveSource"
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.tagResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 3,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Publish Failed"
+        }
+      ],
+      "Next": "Record Publish"
+    },
+    "Record Publish": {
+      "Type": "Task",
+      "Comment": "Final DynamoDB update via the native integration (no Lambda): set the terminal workflow status and end time. Keyed on the guid partition key.",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TableName": "${DYNAMODB_TABLE}",
+        "Key": {
+          "guid": { "S.$": "$.guid" }
+        },
+        "UpdateExpression": "SET workflowStatus = :s, endTime = :e, archiveSource = :a",
+        "ExpressionAttributeValues": {
+          ":s": { "S": "Complete" },
+          ":e": { "S.$": "$$.State.EnteredTime" },
+          ":a": { "S.$": "$.config.archiveSource" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "DynamoDB.ThrottlingException",
+            "DynamoDB.InternalServerErrorException",
+            "DynamoDB.ProvisionedThroughputExceededException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Publish Failed"
+        }
+      ],
+      "Next": "Build Notification"
+    },
+    "Build Notification": {
+      "Type": "Pass",
+      "Comment": "Assemble the stable success notification payload (guid, source key, HLS + DASH playback URLs, status) shared by the SNS and SQS publishes.",
+      "Parameters": {
+        "guid.$": "$.guid",
+        "srcVideo.$": "$.srcVideo",
+        "hlsUrl.$": "$.hlsUrl",
+        "dashUrl.$": "$.dashUrl",
+        "destinationS3.$": "$.destinationS3",
+        "workflowStatus": "Complete"
+      },
+      "ResultPath": "$.notification",
+      "Next": "SQS Choice"
+    },
+    "SQS Choice": {
+      "Type": "Choice",
+      "Comment": "Send the results to SQS only when enabled. $.config.enableSqs is the string \"true\"/\"false\" carried through from the orchestrator.",
+      "Choices": [
+        {
+          "Variable": "$.config.enableSqs",
+          "StringEquals": "true",
+          "Next": "Send SQS Message"
+        }
+      ],
+      "Default": "SNS Choice"
+    },
+    "Send SQS Message": {
+      "Type": "Task",
+      "Comment": "Native SQS send (no sqs-publish Lambda). MessageBody is the JSON-serialized success payload for upstream consumers. Best-effort: after Retry, a send failure routes to Publish Complete rather than flipping the already-Complete asset to Error.",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "QueueUrl": "${SQS_QUEUE_URL}",
+        "MessageBody.$": "States.JsonToString($.notification)"
+      },
+      "ResultPath": "$.sqsResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 3,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.sqsError",
+          "Next": "SNS Choice"
+        }
+      ],
+      "Next": "SNS Choice"
+    },
+    "SNS Choice": {
+      "Type": "Choice",
+      "Comment": "Publish the completion notification only when SNS is enabled. $.config.enableSns is carried through from the orchestrator.",
+      "Choices": [
+        {
+          "Variable": "$.config.enableSns",
+          "StringEquals": "true",
+          "Next": "Notify Success"
+        }
+      ],
+      "Default": "Publish Complete"
+    },
+    "Notify Success": {
+      "Type": "Task",
+      "Comment": "Native SNS publish (no sns-notification Lambda) with the HLS + DASH playback URLs. Best-effort: after Retry, a publish failure routes to Publish Complete rather than flipping the already-Complete asset to Error.",
+      "Resource": "arn:aws:states:::sns:publish",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TopicArn": "${SNS_TOPIC_ARN}",
+        "Subject.$": "States.Format('{}: VOD job COMPLETE', '${STACK_NAME}')",
+        "Message.$": "States.Format('Video \"{}\" is ready.\n\n{}\n\nGUID: {}', $.srcVideo, $.outputsSummary, $.guid)"
+      },
+      "ResultPath": "$.snsResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 3,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.snsError",
+          "Next": "Publish Complete"
+        }
+      ],
+      "Next": "Publish Complete"
+    },
+    "Publish Complete": {
+      "Type": "Succeed"
+    },
+    "Publish Failed": {
+      "Type": "Fail",
+      "Comment": "Propagate the specific error/cause to the orchestrator's Catch (which owns the single Error record + SNS notification). ErrorPath/CausePath surface the dynamic $.error set by the failing state.",
+      "ErrorPath": "$.error.Error",
+      "CausePath": "$.error.Cause"
+    }
+  }
+}

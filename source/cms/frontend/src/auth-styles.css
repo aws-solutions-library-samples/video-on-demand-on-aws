@@ -1,0 +1,509 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. Apache-2.0.
+ * Sign-in page (components/SignInPage.tsx): AWS brand 2026, Lagoon mood. A full-viewport Lagoon gradient
+ * (Gray 850 -> Blue 900 -> Blue 600 -> Cyan 400) behind a solid white card that holds every field. On wide
+ * screens a demo panel (headline + the four-stage pipeline) sits left of the card, in white type over the dark
+ * end of the gradient plus a Gray 850 scrim (white stays >= 4.5:1); below 960px it shortens to the headline and below 480px
+ * it is hidden. Independent of the app's color mode. The Amplify Authenticator is restyled only through its
+ * CSS custom properties, scoped to .signin, so nothing leaks into the app.
+ *
+ * Fonts: Amazon Ember is named but never loaded (no @font-face, no font files, no CDN); public visitors get
+ * Arial, and the layout is tuned for it. Contrast (WCAG AA, on #FFFFFF): text #161D26 16:1, helper #656871
+ * 5.7:1, links/eyebrow #006CE0 5:1, error #DB0000 5.6:1; white on the #006CE0 button 5:1. Cyan is decoration
+ * only (the card's top rule), never text.
+ */
+.signin {
+  --brand-primary: #006ce0; /* Blue 600 */
+  --brand-primary-hover: #004a9e; /* Blue 700 */
+  --brand-accent: #00d2e5; /* Cyan 400: decorative rule only */
+  --brand-tint: #f0feff;
+  --brand-text: #161d26; /* Gray 850 */
+  --brand-text-secondary: #656871; /* Gray 600 */
+  --brand-border: #dedee3; /* Gray 300 */
+  --brand-field: #f9f9fb;
+  --brand-error: #db0000; /* Red 600: status only */
+  --brand-font: 'Amazon Ember Display', 'Amazon Ember', Arial, sans-serif;
+  --brand-font-mono: 'Amazon Ember Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  /* Amplify card chrome off: the .signin__card is the card. */
+  --amplify-components-authenticator-router-border-width: 0;
+  --amplify-components-authenticator-router-box-shadow: none;
+  --amplify-components-authenticator-router-background-color: transparent;
+  --amplify-components-authenticator-form-padding: 0;
+
+  /* Type and colour. */
+  --amplify-fonts-default-variable: var(--brand-font);
+  --amplify-fonts-default-static: var(--brand-font);
+  --amplify-colors-font-primary: var(--brand-text);
+  --amplify-colors-font-secondary: var(--brand-text-secondary);
+  --amplify-components-field-label-color: var(--brand-text);
+  --amplify-components-field-label-font-size: 14px;
+  --amplify-components-heading-color: var(--brand-text);
+  --amplify-components-text-color: var(--brand-text);
+
+  /* Inputs: Gray 300 border, light fill, 2px Blue 600 focus ring. */
+  --amplify-components-fieldcontrol-color: var(--brand-text);
+  --amplify-components-fieldcontrol-font-size: 15px;
+  --amplify-components-fieldcontrol-border-width: 1px;
+  --amplify-components-fieldcontrol-border-color: var(--brand-border);
+  --amplify-components-fieldcontrol-border-radius: 8px;
+  --amplify-components-fieldcontrol-padding-block-start: 9px;
+  --amplify-components-fieldcontrol-padding-block-end: 9px;
+  --amplify-components-fieldcontrol-focus-border-color: var(--brand-primary);
+  --amplify-components-input-border-color: var(--brand-border);
+  --amplify-components-input-focus-border-color: var(--brand-primary);
+  --amplify-components-fieldcontrol-focus-box-shadow: 0 0 0 2px var(--brand-primary);
+  --amplify-components-fieldcontrol-error-border-color: var(--brand-error);
+  --amplify-components-fieldcontrol-error-focus-box-shadow: 0 0 0 2px var(--brand-error);
+  --amplify-components-fieldmessages-error-color: var(--brand-error);
+  --amplify-components-passwordfield-button-color: var(--brand-text-secondary);
+  --amplify-components-passwordfield-button-hover-color: var(--brand-text);
+  --amplify-components-passwordfield-button-hover-background-color: var(--brand-tint);
+  --amplify-components-passwordfield-button-hover-border-color: var(--brand-border);
+  --amplify-components-passwordfield-button-focus-color: var(--brand-text);
+  --amplify-components-passwordfield-button-focus-background-color: var(--brand-tint);
+  --amplify-components-passwordfield-button-focus-border-color: var(--brand-primary);
+  --amplify-components-passwordfield-button-active-background-color: var(--brand-tint);
+
+  /* Buttons: solid Blue 600 primary (no gradient), Blue 700 hover; secondary and link buttons in Blue 600. */
+  --amplify-components-button-border-radius: 8px;
+  --amplify-components-button-font-size: 15px;
+  --amplify-components-button-font-weight: 700;
+  --amplify-components-button-padding-block-start: 10px;
+  --amplify-components-button-padding-block-end: 10px;
+  --amplify-components-button-color: var(--brand-primary);
+  --amplify-components-button-border-color: var(--brand-border);
+  --amplify-components-button-hover-color: var(--brand-primary-hover);
+  --amplify-components-button-hover-background-color: var(--brand-tint);
+  --amplify-components-button-hover-border-color: var(--brand-primary);
+  --amplify-components-button-focus-color: var(--brand-primary-hover);
+  --amplify-components-button-focus-background-color: var(--brand-tint);
+  --amplify-components-button-focus-border-color: var(--brand-primary);
+  --amplify-components-button-focus-box-shadow: 0 0 0 2px var(--brand-primary);
+  --amplify-components-button-active-background-color: var(--brand-tint);
+  --amplify-components-button-active-border-color: var(--brand-primary);
+  --amplify-components-button-primary-background-color: var(--brand-primary);
+  --amplify-components-button-primary-color: #ffffff;
+  --amplify-components-button-primary-hover-background-color: var(--brand-primary-hover);
+  --amplify-components-button-primary-hover-color: #ffffff;
+  --amplify-components-button-primary-focus-background-color: var(--brand-primary-hover);
+  --amplify-components-button-primary-focus-color: #ffffff;
+  --amplify-components-button-primary-focus-box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--brand-primary);
+  --amplify-components-button-primary-active-background-color: var(--brand-primary-hover);
+  --amplify-components-button-primary-active-color: #ffffff;
+  --amplify-components-button-link-color: var(--brand-primary);
+  --amplify-components-button-link-hover-color: var(--brand-primary-hover);
+  --amplify-components-button-link-hover-background-color: var(--brand-tint);
+  --amplify-components-button-link-focus-color: var(--brand-primary-hover);
+  --amplify-components-button-link-focus-background-color: var(--brand-tint);
+  --amplify-components-button-link-active-color: var(--brand-primary-hover);
+  --amplify-components-button-link-active-background-color: var(--brand-tint);
+
+  /* Error alert (e.g. "Incorrect username or password."): Red 600 text on a pale red tint. */
+  --amplify-components-alert-error-color: var(--brand-error);
+  --amplify-components-alert-error-background-color: #fff5f5;
+
+  display: grid;
+  grid-template-rows: auto 1fr;
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 28px 32px;
+  color: var(--brand-text);
+  font-family: var(--brand-font);
+  /* Lagoon mood + the dark anchor only: a soft Cyan glow (top layer) over the 135deg base. The base is
+     sized 140% so it can pan while still reaching the Cyan end; the glow stays fixed. */
+  background:
+    linear-gradient(90deg, rgba(22, 29, 38, 0.55) 0%, rgba(22, 29, 38, 0.25) 45%, transparent 70%),
+    radial-gradient(circle at 80% 20%, rgba(0, 210, 229, 0.35), transparent 60%),
+    linear-gradient(135deg, #161d26 0%, #002a66 30%, #006ce0 65%, #00d2e5 100%);
+  background-size:
+    100% 100%,
+    100% 100%,
+    140% 140%;
+  background-position:
+    0 0,
+    0 0,
+    0% 0%;
+  animation: signin-pan 24s ease-in-out infinite alternate;
+}
+
+@keyframes signin-pan {
+  from {
+    background-position:
+      0 0,
+      0 0,
+      0% 0%;
+  }
+  to {
+    background-position:
+      0 0,
+      0 0,
+      100% 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signin {
+    animation: none;
+  }
+}
+
+/* The app name, top-left over the dark (Gray 850 / Blue 900) end of the gradient. */
+.signin__brand {
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+}
+
+/* Wide: demo story left, card right. Narrow: one centred column. */
+.signin__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: clamp(40px, 6vw, 96px);
+  align-items: center;
+  align-self: center;
+  justify-self: center;
+  width: 100%;
+  max-width: 1120px;
+  padding: 32px 0;
+}
+
+.signin__story {
+  max-width: 560px;
+  color: #ffffff;
+}
+
+.signin__story-eyebrow {
+  margin: 0 0 14px;
+  color: #ffffff;
+  font-family: var(--brand-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.signin__story-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 24px;
+  height: 2px;
+  margin-right: 10px;
+  vertical-align: middle;
+  background: var(--brand-accent);
+}
+
+.signin__story-title {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(32px, 3.6vw, 48px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.08;
+}
+
+.signin__story-lede {
+  margin: 18px 0 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+/* The pipeline: four numbered stops on a vertical rail, a Cyan pulse travelling down it. */
+.signin__pipeline {
+  position: relative;
+  margin: 36px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.signin__pipeline::before,
+.signin__pipeline::after {
+  content: '';
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 15px;
+  width: 2px;
+}
+
+.signin__pipeline::before {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.signin__pipeline::after {
+  background: linear-gradient(180deg, transparent, var(--brand-accent), transparent);
+  background-size: 100% 40%;
+  background-repeat: no-repeat;
+  animation: signin-flow 3.2s ease-in-out infinite;
+}
+
+@keyframes signin-flow {
+  from {
+    background-position: 0 -60%;
+  }
+  to {
+    background-position: 0 160%;
+  }
+}
+
+.signin__step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 10px 0;
+  opacity: 0;
+  animation: signin-rise 480ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+@keyframes signin-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.signin__step-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--brand-accent);
+  border-radius: 50%;
+  background: #161d26;
+  color: #ffffff;
+  font-family: var(--brand-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.signin__step-text {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: baseline;
+  padding-top: 5px;
+}
+
+.signin__step-stage {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.signin__step-service {
+  color: #ffffff;
+  font-family: var(--brand-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+}
+
+.signin__step-detail {
+  grid-column: 1 / -1;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signin__pipeline::after {
+    animation: none;
+    display: none;
+  }
+
+  .signin__step {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.signin__card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 400px;
+  padding: 36px 32px 32px;
+  border-top: 3px solid var(--brand-accent);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgba(22, 29, 38, 0.12),
+    0 16px 40px rgba(22, 29, 38, 0.28);
+}
+
+.signin__header {
+  margin-bottom: 24px;
+}
+
+.signin__eyebrow {
+  margin: 0 0 8px;
+  color: var(--brand-primary);
+  font-family: var(--brand-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.signin__title,
+.signin [data-amplify-authenticator] .amplify-heading {
+  margin: 0;
+  color: var(--brand-text);
+  font-family: var(--brand-font);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.signin [data-amplify-authenticator] .amplify-heading {
+  margin-bottom: 20px;
+}
+
+/* Header explanation (every route) and the password rules on the new-password routes. */
+.signin__lede {
+  margin-top: 10px;
+  color: var(--brand-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.signin__lede p {
+  margin: 0;
+}
+
+.signin__lede p + p {
+  margin-top: 10px;
+}
+
+.signin__rules {
+  padding: 10px 12px;
+  border-left: 3px solid var(--brand-primary);
+  border-radius: 4px;
+  background: var(--brand-tint);
+  color: var(--brand-text);
+}
+
+/* Under the form, sign-in route only. */
+.signin__footer {
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--brand-border);
+  color: var(--brand-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.signin [data-amplify-authenticator] {
+  display: block;
+}
+
+.signin [data-amplify-authenticator] [data-amplify-container] {
+  width: 100%;
+}
+
+.signin [data-amplify-authenticator] [data-amplify-router] {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.signin .amplify-label {
+  font-weight: 700;
+}
+
+.signin .amplify-input,
+.signin .amplify-field-group__outer-end .amplify-button {
+  border-color: var(--brand-border);
+}
+
+.signin .amplify-input {
+  background: var(--brand-field);
+}
+
+.signin .amplify-input:focus {
+  border-color: var(--brand-primary);
+}
+
+.signin .amplify-input:focus {
+  background: #ffffff;
+}
+
+.signin [data-amplify-authenticator] [data-amplify-footer] {
+  padding-bottom: 0;
+}
+
+/* Keyboard focus is always visible, including on elements Amplify does not theme. */
+.signin :focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.signin .amplify-input:focus-visible,
+.signin .amplify-button:focus-visible {
+  outline: none; /* these draw the 2px ring through their focus box-shadow */
+}
+
+/* Tablet: one column, the story shortened to its headline above the card. */
+@media (max-width: 959px) {
+  .signin__body {
+    grid-template-columns: minmax(0, 400px);
+    justify-content: center;
+    gap: 28px;
+  }
+
+  .signin__story {
+    text-align: center;
+  }
+
+  .signin__story-eyebrow::before,
+  .signin__pipeline {
+    display: none;
+  }
+
+  .signin__story-title {
+    font-size: 30px;
+  }
+
+  .signin__story-lede {
+    font-size: 15px;
+  }
+}
+
+/* Phone: tighter page padding (safe-area aware), card near the top and edge to edge within the padding. */
+@media (max-width: 480px) {
+  .signin {
+    padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+      max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+
+  .signin__brand {
+    font-size: 17px;
+  }
+
+  .signin__body {
+    align-self: start;
+    margin-top: 6vh;
+    padding: 0;
+  }
+
+  .signin__story {
+    display: none;
+  }
+
+  .signin__card {
+    padding: 28px 20px 24px;
+  }
+}

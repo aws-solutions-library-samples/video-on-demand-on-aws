@@ -1,5 +1,8 @@
 #!/bin/bash
 #
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # This script will perform the following tasks:
 #   1. Remove any old dist files from previous runs.
 #   2. Install dependencies for the cdk-solution-helper; responsible for
@@ -61,22 +64,11 @@ cd "$template_dir/cdk-solution-helper"
 npm install --omit=dev
 
 echo "------------------------------------------------------------------------------"
-echo "Download mediainfo binary for AWS Lambda"
-echo "------------------------------------------------------------------------------"
-cd "$source_dir/mediainfo/"
-rm -rf bin/*
-curl -O https://mediaarea.net/download/binary/mediainfo/20.09/MediaInfo_CLI_20.09_Lambda.zip
-unzip MediaInfo_CLI_20.09_Lambda.zip 
-mv LICENSE bin/
-chmod +x ./bin/mediainfo
-rm -r MediaInfo_CLI_20.09_Lambda.zip
-
-echo "------------------------------------------------------------------------------"
 echo "[Synth] CDK Project"
 echo "------------------------------------------------------------------------------"
 
-cd "$source_dir/cdk"
-npm install
+(cd "$source_dir/.." && npm ci)
+cd "$source_dir/core"
 npm run cdk -- synth --output="$staging_dist_dir"
 if [ $? -ne 0 ]
 then

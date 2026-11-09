@@ -1,0 +1,23 @@
+{
+  "name": "video-on-demand-on-aws-modules",
+  "version": "7.0.0",
+  "description": "Guidance for Video on Demand on AWS (SO9674): npm workspaces root for the companion module stacks (WAF). Kept separate from the repo-root workspaces so the core distribution builds without them; @vod/contract is linked from source/contract.",
+  "license": "Apache-2.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "waf"
+  ],
+  "scripts": {
+    "prebuild": "npm run build --prefix ../contract",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "overrides": {
+    "aws-cdk-lib": "2.268.0",
+    "constructs": "10.6.0"
+  }
+}

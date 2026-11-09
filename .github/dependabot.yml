@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # npm dependencies for every workspace package (one root package-lock.json). The CDK library
+  # version is pinned repo-wide through the root package.json `overrides`; bump it there.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    groups:
+      # Collapse the CDK toolchain bumps into a single PR.
+      aws-cdk:
+        patterns:
+          - aws-cdk
+          - aws-cdk-lib
+          - "@aws-solutions-constructs/*"
+          - cdk-nag
+
+  # GitHub Actions used by the CI and CodeQL workflows (keeps SHA pins fresh).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies

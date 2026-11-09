@@ -1,0 +1,267 @@
+{
+  "Comment": "VOD Orchestrator workflow (native integrations, no Lambda): the single per-asset execution and source of truth. Triggered by S3 -> EventBridge 'Object Created', it mints a GUID, creates the DynamoDB item, then runs the Ingest, Process, and Publish stage state machines as child executions via states:startExecution.sync:2. A single Catch on each child records workflowStatus=Error (with the failing stage + cause) in DynamoDB and publishes one SNS error notification. Creating the item up front means every later write is an idempotent updateItem and there is no 'item does not exist yet' edge case on failure.",
+  "StartAt": "Generate GUID",
+  "States": {
+    "Generate GUID": {
+      "Type": "Pass",
+      "Comment": "Derive a DETERMINISTIC job GUID from the source object identity (key + S3 versionId) via States.Hash(...,'SHA-256'), so the same object always maps to the same DynamoDB partition key (idempotency). A duplicate at-least-once EventBridge delivery for the same key+versionId yields the same guid and is deduped by the conditional PutItem in Record Started; a deliberate re-upload gets a NEW versionId -> new guid -> reprocesses. guid is therefore a 64-char SHA-256 hex string, not a UUID. version-id uses bracket notation (hyphenated field). If versioning were ever suspended, version-id arrives as the literal 'null', degrading gracefully to key-only dedup. Also derives the source s3:// URI, bucket, and key from the event; the per-asset job config + feature toggles are assembled by the next state (Load Job Config).",
+      "Parameters": {
+        "guid.$": "States.Hash(States.Format('{}/{}', $.detail.object.key, $.detail.object['version-id']), 'SHA-256')",
+        "startTime.$": "$$.State.EnteredTime",
+        "workflowName": "${STACK_NAME}",
+        "orchestratorExecutionArn.$": "$$.Execution.Id",
+        "srcBucket.$": "$.detail.bucket.name",
+        "srcVideo.$": "$.detail.object.key",
+        "fileUri.$": "States.Format('s3://{}/{}', $.detail.bucket.name, $.detail.object.key)"
+      },
+      "ResultPath": "$",
+      "Next": "Load Job Config"
+    },
+    "Load Job Config": {
+      "Type": "Pass",
+      "Comment": "Assemble the per-asset job configuration + feature toggles into a single clear JSON object at $.config, which downstream stages read (e.g. $.config.archiveSource, $.config.enableSns, $.config.enableSqs). Today the values come from deploy-time context substitutions (${ARCHIVE_SOURCE}/${ENABLE_SNS}/${ENABLE_SQS}). INTERIM STEP: a future revision replaces this Pass with an s3:getObject read of a per-asset sidecar metadata file (<source>.json) that accompanies the source media, parsed into this same $.config shape (with a Catch falling back to these deploy-time defaults). It is placed after Generate GUID so the resolved srcBucket/srcVideo/fileUri are available for that read.",
+      "Parameters": {
+        "archiveSource": "${ARCHIVE_SOURCE}",
+        "enableSns": "${ENABLE_SNS}",
+        "enableSqs": "${ENABLE_SQS}"
+      },
+      "ResultPath": "$.config",
+      "Next": "Record Started"
+    },
+    "Record Started": {
+      "Type": "Task",
+      "Comment": "Create the DynamoDB job record up front with the native integration (no Lambda). guid is the partition key; srcBucket + startTime populate the srcBucket-startTime-index GSI carried from v6. orchestratorExecutionArn lets a console/frontend resolve the single per-asset execution. Idempotency: the put is CONDITIONAL on attribute_not_exists(guid) so only the first delivery of a given key+versionId creates the item; a duplicate delivery (same deterministic guid) fails the condition and is caught to Duplicate Skipped, short-circuiting BEFORE any MediaConvert encode. grantTablePut already grants dynamodb:PutItem; a conditional put needs no extra IAM.",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TableName": "${DYNAMODB_TABLE}",
+        "ConditionExpression": "attribute_not_exists(guid)",
+        "Item": {
+          "guid": { "S.$": "$.guid" },
+          "srcBucket": { "S.$": "$.srcBucket" },
+          "srcVideo": { "S.$": "$.srcVideo" },
+          "startTime": { "S.$": "$.startTime" },
+          "workflowName": { "S": "${STACK_NAME}" },
+          "workflowStatus": { "S": "Ingest" },
+          "archiveSource": { "S.$": "$.config.archiveSource" },
+          "orchestratorExecutionArn": { "S.$": "$.orchestratorExecutionArn" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "DynamoDB.ThrottlingException",
+            "DynamoDB.InternalServerErrorException",
+            "DynamoDB.ProvisionedThroughputExceededException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "Next": "Duplicate Skipped"
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Set Ingest Error"
+        }
+      ],
+      "Next": "Ingest"
+    },
+    "Duplicate Skipped": {
+      "Type": "Succeed",
+      "Comment": "Idempotency: a duplicate S3 'Object Created' delivery for the same key+versionId. The item already exists, so the conditional PutItem (attribute_not_exists(guid)) failed and this execution short-circuits BEFORE Ingest/Process/Publish run: no second MediaConvert job, no Error record, no failure SNS. This is a benign Succeed on its own path (it never touches Record Failure / Notify Failure). Note: EventBridge still STARTS this second execution on re-delivery; it simply terminates immediately here."
+    },
+    "Ingest": {
+      "Type": "Task",
+      "Comment": "Run the Ingest stage state machine as a child execution (states:startExecution.sync:2, so the child Output is returned as JSON). Ingest validates the metadata scalar allowlist, probes the source with MediaConvert, and records the probe result. Its Output is forwarded to Process. Child executions are named after this Orchestrator execution (not the guid) so a CMS re-drive of the same guid does not collide with the closed child of the failed run (Step Functions reserves an execution name for 90 days).",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "StateMachineArn": "${INGEST_STATE_MACHINE_ARN}",
+        "Name.$": "States.Format('{}-ingest', States.Hash($$.Execution.Name, 'MD5'))",
+        "Input": {
+          "guid.$": "$.guid",
+          "srcBucket.$": "$.srcBucket",
+          "srcVideo.$": "$.srcVideo",
+          "fileUri.$": "$.fileUri",
+          "startTime.$": "$.startTime",
+          "workflowName.$": "$.workflowName",
+          "config.$": "$.config"
+        }
+      },
+      "ResultPath": "$.ingest",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "StepFunctions.ExecutionLimitExceeded",
+            "StepFunctions.ThrottlingException"
+          ],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Set Ingest Error"
+        }
+      ],
+      "Next": "Process"
+    },
+    "Process": {
+      "Type": "Task",
+      "Comment": "Run the Process stage state machine as a child execution (startExecution.sync:2), passing the Ingest Output as input. Process chooses the tier, submits the CMAF MediaConvert job (createJob.sync), and records the outputs + playback URLs. Its Output is forwarded to Publish.",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "StateMachineArn": "${PROCESS_STATE_MACHINE_ARN}",
+        "Name.$": "States.Format('{}-process', States.Hash($$.Execution.Name, 'MD5'))",
+        "Input.$": "$.ingest.Output"
+      },
+      "ResultPath": "$.process",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "StepFunctions.ExecutionLimitExceeded",
+            "StepFunctions.ThrottlingException"
+          ],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Set Process Error"
+        }
+      ],
+      "Next": "Publish"
+    },
+    "Publish": {
+      "Type": "Task",
+      "Comment": "Run the Publish stage state machine as a child execution (startExecution.sync:2), passing the Process Output as input. Publish validates the output, optionally archives the source, records the terminal status, and sends the success SNS/SQS notifications.",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "StateMachineArn": "${PUBLISH_STATE_MACHINE_ARN}",
+        "Name.$": "States.Format('{}-publish', States.Hash($$.Execution.Name, 'MD5'))",
+        "Input.$": "$.process.Output"
+      },
+      "ResultPath": "$.publish",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "StepFunctions.ExecutionLimitExceeded",
+            "StepFunctions.ThrottlingException"
+          ],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Set Publish Error"
+        }
+      ],
+      "Next": "Workflow Complete"
+    },
+    "Workflow Complete": {
+      "Type": "Succeed"
+    },
+    "Set Ingest Error": {
+      "Type": "Pass",
+      "Comment": "Tag the failing stage so the single Record Failure state can persist which stage failed.",
+      "Result": "Ingest",
+      "ResultPath": "$.errorStage",
+      "Next": "Record Failure"
+    },
+    "Set Process Error": {
+      "Type": "Pass",
+      "Result": "Process",
+      "ResultPath": "$.errorStage",
+      "Next": "Record Failure"
+    },
+    "Set Publish Error": {
+      "Type": "Pass",
+      "Result": "Publish",
+      "ResultPath": "$.errorStage",
+      "Next": "Record Failure"
+    },
+    "Record Failure": {
+      "Type": "Task",
+      "Comment": "Single centralized failure write (native updateItem, no Lambda): set workflowStatus=Error with the failing stage, a captured error message, and the end time. UpdateItem upserts, so this succeeds even if Record Started itself failed. Keyed on the guid partition key.",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TableName": "${DYNAMODB_TABLE}",
+        "Key": {
+          "guid": { "S.$": "$.guid" }
+        },
+        "UpdateExpression": "SET workflowStatus = :s, errorStage = :st, errorMessage = :m, endTime = :e",
+        "ExpressionAttributeValues": {
+          ":s": { "S": "Error" },
+          ":st": { "S.$": "$.errorStage" },
+          ":m": { "S.$": "States.Format('{}: {}', $.error.Error, $.error.Cause)" },
+          ":e": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "DynamoDB.ThrottlingException",
+            "DynamoDB.InternalServerErrorException",
+            "DynamoDB.ProvisionedThroughputExceededException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.recordError",
+          "Next": "Notify Failure"
+        }
+      ],
+      "Next": "Notify Failure"
+    },
+    "Notify Failure": {
+      "Type": "Task",
+      "Comment": "The one workflow error notification (native SNS publish, replaces the v6 error-handler Lambda and the per-stage failure notifications). Always fires on the failure path, regardless of enableSns.",
+      "Resource": "arn:aws:states:::sns:publish",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TopicArn": "${SNS_TOPIC_ARN}",
+        "Subject.$": "States.Format('{}: VOD workflow ERROR', '${STACK_NAME}')",
+        "Message.$": "States.Format('VOD workflow failed for \"{}\" at the {} stage.\n\nGUID: {}\nError: {}\nCause: {}', $.srcVideo, $.errorStage, $.guid, $.error.Error, $.error.Cause)"
+      },
+      "ResultPath": "$.snsFailure",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 3,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Next": "Workflow Failed"
+    },
+    "Workflow Failed": {
+      "Type": "Fail",
+      "Error": "VodWorkflowFailed",
+      "Cause": "The VOD workflow failed. See the DynamoDB item (workflowStatus=Error), the SNS error notification, and the execution history for details."
+    }
+  }
+}

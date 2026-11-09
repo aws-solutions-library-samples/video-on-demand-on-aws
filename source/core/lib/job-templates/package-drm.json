@@ -1,0 +1,193 @@
+{
+    "TimecodeConfig": {
+        "Source": "ZEROBASED"
+    },
+    "Inputs": [
+        {
+            "FileInput": "${INPUT_URI}",
+            "TimecodeSource": "ZEROBASED",
+            "VideoSelector": {},
+            "AudioSelectors": {
+                "Audio Selector 1": {
+                    "DefaultSelection": "DEFAULT"
+                }
+            }
+        }
+    ],
+    "OutputGroups": [
+        {
+            "Name": "HLS-TS",
+            "OutputGroupSettings": {
+                "Type": "HLS_GROUP_SETTINGS",
+                "HlsGroupSettings": {
+                    "Destination": "${DESTINATION}",
+                    "SegmentControl": "SEGMENTED_FILES",
+                    "SegmentLength": 6,
+                    "MinSegmentLength": 0,
+                    "DirectoryStructure": "SINGLE_DIRECTORY",
+                    "OutputSelection": "MANIFESTS_AND_SEGMENTS",
+                    "CodecSpecification": "RFC_4281",
+                    "ManifestDurationFormat": "FLOATING_POINT",
+                    "ClientCache": "ENABLED",
+                    "StreamInfResolution": "INCLUDE"
+                }
+            },
+            "Outputs": [
+                {
+                    "NameModifier": "_hls",
+                    "ContainerSettings": {
+                        "Container": "M3U8",
+                        "M3u8Settings": {
+                            "AudioFramesPerPes": 4,
+                            "PcrControl": "PCR_EVERY_PES_PACKET",
+                            "Scte35Source": "NONE",
+                            "NielsenId3": "NONE",
+                            "TimedMetadata": "NONE"
+                        }
+                    },
+                    "VideoDescription": {
+                        "CodecSettings": {
+                            "Codec": "PASSTHROUGH",
+                            "PassthroughSettings": {
+                                "VideoSelectorMode": "REMUX_ALL"
+                            }
+                        }
+                    },
+                    "AudioDescriptions": [
+                        {
+                            "AudioSourceName": "Audio Selector 1",
+                            "LanguageCodeControl": "FOLLOW_INPUT",
+                            "CodecSettings": {
+                                "Codec": "AAC",
+                                "AacSettings": {
+                                    "Bitrate": 128000,
+                                    "CodingMode": "CODING_MODE_2_0",
+                                    "SampleRate": 48000,
+                                    "RateControlMode": "CBR",
+                                    "CodecProfile": "LC"
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "Name": "CMAF-HLS",
+            "OutputGroupSettings": {
+                "Type": "CMAF_GROUP_SETTINGS",
+                "CmafGroupSettings": {
+                    "Destination": "${DESTINATION}",
+                    "SegmentControl": "SINGLE_FILE",
+                    "SegmentLength": 6,
+                    "SegmentLengthControl": "GOP_MULTIPLE",
+                    "FragmentLength": 2,
+                    "MinFinalSegmentLength": 1,
+                    "CodecSpecification": "RFC_6381",
+                    "ManifestDurationFormat": "FLOATING_POINT",
+                    "StreamInfResolution": "INCLUDE",
+                    "WriteHlsManifest": "ENABLED",
+                    "WriteDashManifest": "DISABLED"
+                }
+            },
+            "Outputs": [
+                {
+                    "NameModifier": "_cmaf_video",
+                    "ContainerSettings": {
+                        "Container": "CMFC",
+                        "CmfcSettings": {
+                            "AudioRenditionSets": "program_audio"
+                        }
+                    },
+                    "VideoDescription": {
+                        "CodecSettings": {
+                            "Codec": "PASSTHROUGH",
+                            "PassthroughSettings": {
+                                "VideoSelectorMode": "REMUX_ALL"
+                            }
+                        }
+                    }
+                },
+                {
+                    "NameModifier": "_cmaf_audio",
+                    "ContainerSettings": {
+                        "Container": "CMFC",
+                        "CmfcSettings": {
+                            "AudioGroupId": "program_audio",
+                            "AudioTrackType": "ALTERNATE_AUDIO_AUTO_SELECT_DEFAULT",
+                            "AudioDuration": "DEFAULT_CODEC_DURATION"
+                        }
+                    },
+                    "AudioDescriptions": [
+                        {
+                            "AudioSourceName": "Audio Selector 1",
+                            "LanguageCodeControl": "FOLLOW_INPUT",
+                            "CodecSettings": {
+                                "Codec": "AAC",
+                                "AacSettings": {
+                                    "Bitrate": 128000,
+                                    "CodingMode": "CODING_MODE_2_0",
+                                    "SampleRate": 48000,
+                                    "RateControlMode": "CBR",
+                                    "CodecProfile": "LC"
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "Name": "DASH",
+            "OutputGroupSettings": {
+                "Type": "DASH_ISO_GROUP_SETTINGS",
+                "DashIsoGroupSettings": {
+                    "Destination": "${DESTINATION}",
+                    "SegmentControl": "SEGMENTED_FILES",
+                    "SegmentLength": 6,
+                    "FragmentLength": 2,
+                    "MpdProfile": "MAIN_PROFILE",
+                    "WriteSegmentTimelineInRepresentation": "ENABLED"
+                }
+            },
+            "Outputs": [
+                {
+                    "NameModifier": "_dash_video",
+                    "ContainerSettings": {
+                        "Container": "MPD"
+                    },
+                    "VideoDescription": {
+                        "CodecSettings": {
+                            "Codec": "PASSTHROUGH",
+                            "PassthroughSettings": {
+                                "VideoSelectorMode": "REMUX_ALL"
+                            }
+                        }
+                    }
+                },
+                {
+                    "NameModifier": "_dash_audio",
+                    "ContainerSettings": {
+                        "Container": "MPD"
+                    },
+                    "AudioDescriptions": [
+                        {
+                            "AudioSourceName": "Audio Selector 1",
+                            "LanguageCodeControl": "FOLLOW_INPUT",
+                            "CodecSettings": {
+                                "Codec": "AAC",
+                                "AacSettings": {
+                                    "Bitrate": 128000,
+                                    "CodingMode": "CODING_MODE_2_0",
+                                    "SampleRate": 48000,
+                                    "RateControlMode": "CBR",
+                                    "CodecProfile": "LC"
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,163 @@
+{
+  "Comment": "VOD Ingest stage (native integrations, no Lambda): a child of the Orchestrator state machine. Validate the optional metadata scalar allowlist, probe the source with MediaConvert, attach the probe result to the DynamoDB item (created by the orchestrator), and optionally publish an ingest-started SNS notification. The GUID + item are minted by the orchestrator; this stage receives them as input and returns its state as Output. On any failure it ends in the Fail state, which propagates the error/cause to the orchestrator's Catch (the orchestrator owns the single Error record + failure notification).",
+  "StartAt": "Validate Metadata",
+  "States": {
+    "Validate Metadata": {
+      "Type": "Choice",
+      "Comment": "Fail fast on any archive-class scalar outside the allowlist (NONE | GLACIER | DEEP_ARCHIVE). ASL has no JSON-Schema validator, so validation is limited to scalar allowlist checks (plan 3d); anything else routes to Invalid Metadata -> Fail.",
+      "Choices": [
+        {
+          "Variable": "$.config.archiveSource",
+          "StringEquals": "NONE",
+          "Next": "Probe"
+        },
+        {
+          "Variable": "$.config.archiveSource",
+          "StringEquals": "GLACIER",
+          "Next": "Probe"
+        },
+        {
+          "Variable": "$.config.archiveSource",
+          "StringEquals": "DEEP_ARCHIVE",
+          "Next": "Probe"
+        }
+      ],
+      "Default": "Invalid Metadata"
+    },
+    "Invalid Metadata": {
+      "Type": "Pass",
+      "Comment": "Set an error object so the Fail state (and, in turn, the orchestrator) can report a stable failure payload for out-of-allowlist metadata.",
+      "Parameters": {
+        "Error": "InvalidMetadata",
+        "Cause": "Metadata scalar failed allowlist validation (archiveSource must be NONE|GLACIER|DEEP_ARCHIVE)."
+      },
+      "ResultPath": "$.error",
+      "Next": "Ingest Failed"
+    },
+    "Probe": {
+      "Type": "Task",
+      "Comment": "Read source metadata (resolution, codec, duration) via the MediaConvert Probe API - replaces the v6 MediaInfo Lambda + native binary. Video-track selection and height extraction happen in the Process state machine.",
+      "Resource": "arn:aws:states:::aws-sdk:mediaconvert:probe",
+      "TimeoutSeconds": 60,
+      "Parameters": {
+        "InputFiles": [
+          {
+            "FileUrl.$": "$.fileUri"
+          }
+        ]
+      },
+      "ResultPath": "$.probe",
+      "Retry": [
+        {
+          "ErrorEquals": ["MediaConvert.TooManyRequestsException"],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 5
+        },
+        {
+          "ErrorEquals": [
+            "MediaConvert.InternalServerErrorException",
+            "MediaConvert.ConflictException"
+          ],
+          "IntervalSeconds": 15,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Ingest Failed"
+        }
+      ],
+      "Next": "Record Ingest"
+    },
+    "Record Ingest": {
+      "Type": "Task",
+      "Comment": "Attach the probe result to the DynamoDB item (created by the orchestrator) with the native updateItem integration (no Lambda). Keyed on the guid partition key.",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TableName": "${DYNAMODB_TABLE}",
+        "Key": {
+          "guid": { "S.$": "$.guid" }
+        },
+        "UpdateExpression": "SET probe = :p",
+        "ExpressionAttributeValues": {
+          ":p": { "S.$": "States.JsonToString($.probe)" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "DynamoDB.ThrottlingException",
+            "DynamoDB.InternalServerErrorException",
+            "DynamoDB.ProvisionedThroughputExceededException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Ingest Failed"
+        }
+      ],
+      "Next": "SNS Choice"
+    },
+    "SNS Choice": {
+      "Type": "Choice",
+      "Comment": "Publish an ingest-started notification only when SNS is enabled at deploy time ($.config.enableSns carried from the orchestrator as the string \"true\"/\"false\").",
+      "Choices": [
+        {
+          "Variable": "$.config.enableSns",
+          "StringEquals": "true",
+          "Next": "Notify Ingest"
+        }
+      ],
+      "Default": "Ingest Complete"
+    },
+    "Notify Ingest": {
+      "Type": "Task",
+      "Comment": "Native SNS publish (no notification Lambda) announcing that ingest has started for this asset.",
+      "Resource": "arn:aws:states:::sns:publish",
+      "TimeoutSeconds": 15,
+      "Parameters": {
+        "TopicArn": "${SNS_TOPIC_ARN}",
+        "Subject.$": "States.Format('{}: VOD ingest started', '${STACK_NAME}')",
+        "Message.$": "States.Format('Ingest started for \"{}\".\n\nGUID: {}\nSource: {}', $.srcVideo, $.guid, $.fileUri)"
+      },
+      "ResultPath": "$.snsIngest",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 3,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "Ingest Failed"
+        }
+      ],
+      "Next": "Ingest Complete"
+    },
+    "Ingest Complete": {
+      "Type": "Succeed"
+    },
+    "Ingest Failed": {
+      "Type": "Fail",
+      "Comment": "Propagate the specific error/cause to the orchestrator's Catch (which owns the single Error record + SNS notification). ErrorPath/CausePath surface the dynamic $.error set by the failing state.",
+      "ErrorPath": "$.error.Error",
+      "CausePath": "$.error.Cause"
+    }
+  }
+}

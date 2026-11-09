@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: Apache-2.0
+-->
+<!--
+  SAMPLE ESAM SignalProcessingNotification (SCC XML) for the VOD ad-markers overlay.
+
+  HOW TO USE
+  1. Copy this file next to your source video in the source S3 bucket, named "SOURCE.esam.xml"
+     (e.g. for "movie.mp4" upload "movie.mp4.esam.xml"). Upload the sidecar BEFORE (or with) the video.
+  2. Deploy the stack with: -c adMarkersProfile=ON
+  3. Edit the ResponseSignal / ConditioningInfo entries to place your ad avails.
+
+  STRUCTURE (per the AWS Elemental MediaConvert ESAM format)
+  Each ad avail is a PAIR of ResponseSignals at the same NPT point: a START (segmentTypeId="52",
+  Provider Placement Opportunity Start) carrying the duration, and an END (segmentTypeId="53").
+  A sibling ConditioningInfo (acquisitionSignalIDRef -> the START's acquisitionSignalID) sets the
+  startOffset. spliceCommandType="06" = time_signal. signalPointID is the NPT value as a string.
+  duration="PT0S" emits an open (CUE-OUT:0) avail; set a real duration (e.g. "PT30S") to bound it.
+
+  TIMING
+  NPT points are in seconds relative to the FINAL OUTPUT timeline (starting at 0, after any clipping).
+  Markers are honored at the nearest segment boundary, so align avails to your segment length (6s here).
+  This sample defines two avails: one at 120s and one at 300s. Change the NPT / startOffset / duration
+  to match your content.
+
+  Reference: https://docs.aws.amazon.com/mediaconvert/latest/ug/specifying-scte-35-markers-using-esam-xml.html
+  Example:   https://aws.amazon.com/blogs/media/preparing-your-video-library-for-avod-ott/
+  Schema:    OC-SP-ESAM-API-I03-131025 (CableLabs ESAM).
+-->
+<SignalProcessingNotification xmlns="urn:cablelabs:iptvservices:esam:xsd:signal:1"
+    xmlns:sig="urn:cablelabs:md:xsd:signaling:3.0"
+    xmlns:common="urn:cablelabs:iptvservices:esam:xsd:common:1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    acquisitionPointIdentity="VodAdMarkers">
+
+  <common:BatchInfo batchId="1">
+    <common:Source xsi:type="content:MovieType"/>
+  </common:BatchInfo>
+
+  <!-- Ad avail #1 at 120s: START (52) + END (53). -->
+  <ResponseSignal acquisitionPointIdentity="VodAdMarkers" acquisitionSignalID="1" signalPointID="120.00" action="create">
+    <sig:NPTPoint nptPoint="120.00"/>
+    <sig:SCTE35PointDescriptor spliceCommandType="06">
+      <sig:SegmentationDescriptorInfo segmentEventId="1" segmentTypeId="52" upidType="9" upid="1" duration="PT30S" segmentNumber="1" segmentsExpected="1"/>
+    </sig:SCTE35PointDescriptor>
+  </ResponseSignal>
+  <ConditioningInfo acquisitionSignalIDRef="1" startOffset="PT120S" duration="PT30S"/>
+  <ResponseSignal acquisitionPointIdentity="VodAdMarkers" acquisitionSignalID="2" signalPointID="120.00" action="create">
+    <sig:NPTPoint nptPoint="120.00"/>
+    <sig:SCTE35PointDescriptor spliceCommandType="06">
+      <sig:SegmentationDescriptorInfo segmentEventId="1" segmentTypeId="53" upidType="9" upid="2"/>
+    </sig:SCTE35PointDescriptor>
+  </ResponseSignal>
+
+  <!-- Ad avail #2 at 300s: START (52) + END (53). -->
+  <ResponseSignal acquisitionPointIdentity="VodAdMarkers" acquisitionSignalID="3" signalPointID="300.00" action="create">
+    <sig:NPTPoint nptPoint="300.00"/>
+    <sig:SCTE35PointDescriptor spliceCommandType="06">
+      <sig:SegmentationDescriptorInfo segmentEventId="2" segmentTypeId="52" upidType="9" upid="3" duration="PT30S" segmentNumber="2" segmentsExpected="1"/>
+    </sig:SCTE35PointDescriptor>
+  </ResponseSignal>
+  <ConditioningInfo acquisitionSignalIDRef="3" startOffset="PT300S" duration="PT30S"/>
+  <ResponseSignal acquisitionPointIdentity="VodAdMarkers" acquisitionSignalID="4" signalPointID="300.00" action="create">
+    <sig:NPTPoint nptPoint="300.00"/>
+    <sig:SCTE35PointDescriptor spliceCommandType="06">
+      <sig:SegmentationDescriptorInfo segmentEventId="2" segmentTypeId="53" upidType="9" upid="4"/>
+    </sig:SCTE35PointDescriptor>
+  </ResponseSignal>
+
+</SignalProcessingNotification>

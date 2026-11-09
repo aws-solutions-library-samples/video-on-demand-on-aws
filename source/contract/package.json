@@ -1,0 +1,22 @@
+{
+  "name": "@vod/contract",
+  "version": "7.0.0",
+  "description": "Cross-stack contract for Video on Demand on AWS: SSM discovery parameter names and shared deploy-time context helpers.",
+  "license": "Apache-2.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
+    "test": "jest --coverage"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.14",
+    "typescript": "^5.9.3"
+  }
+}

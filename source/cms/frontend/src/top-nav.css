@@ -1,0 +1,14 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. Apache-2.0.
+ */
+
+/*
+ * Cap the TopNavigation brand logo to the title's optical cap-height so the mark
+ * anchors the product name rather than dominating it. The 100x60 asset would
+ * otherwise fill the full nav band and read heavier than the title beside it.
+ * The only <img> in #top-nav is the identity logo.
+ */
+#top-nav img {
+  max-height: 24px;
+  width: auto;
+}

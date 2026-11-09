@@ -10,8 +10,11 @@ import './auth-styles.css';
 import './top-nav.css';
 import awsConfig from './aws-exports';
 import App from './App';
+import { installStaleBuildReload } from './lib/staleBuild';
 
 Amplify.configure(awsConfig);
+// A tab left open across a CMS redeploy reloads onto the new build instead of failing lazy chunk loads.
+installStaleBuildReload();
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

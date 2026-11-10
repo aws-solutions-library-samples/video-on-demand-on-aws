@@ -15,6 +15,7 @@
 import { lazy, Suspense, useState } from 'react';
 import { Box, ExpandableSection, SpaceBetween, Spinner, StatusIndicator, Table } from '@cloudscape-design/components';
 import { fetchQualityMetricsManifest } from '../lib/api';
+import LazyErrorBoundary from './LazyErrorBoundary';
 
 // Code-split ECharts: it only loads once this panel is expanded, keeping it out of the initial bundle.
 const MetricLineChart = lazy(() => import('./MetricLineChart'));
@@ -107,15 +108,17 @@ export default function QualityMetricsPanel({ guid }: { guid: string }) {
                   { id: 'max', header: 'Max', cell: (r) => r.max ?? '-' },
                 ]}
               />
-              <Suspense fallback={<Spinner />}>
-                <MetricLineChart
-                  metric={g.metric}
-                  series={g.renditions.map((r) => ({
-                    title: r.rendition,
-                    data: r.series.map((p) => ({ x: p.frame, y: p.value })),
-                  }))}
-                />
-              </Suspense>
+              <LazyErrorBoundary what="the quality-metrics chart">
+                <Suspense fallback={<Spinner />}>
+                  <MetricLineChart
+                    metric={g.metric}
+                    series={g.renditions.map((r) => ({
+                      title: r.rendition,
+                      data: r.series.map((p) => ({ x: p.frame, y: p.value })),
+                    }))}
+                  />
+                </Suspense>
+              </LazyErrorBoundary>
             </SpaceBetween>
           ))}
         </SpaceBetween>

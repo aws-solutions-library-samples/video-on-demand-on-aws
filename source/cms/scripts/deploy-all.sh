@@ -85,7 +85,14 @@ echo "    wrote $ROOT/frontend/.env"
 
 echo "==> [2/2] Building + publishing the frontend to s3://${SITE_BUCKET} ..."
 ( cd "$ROOT/frontend" && npm run build )
-aws s3 sync "$ROOT/frontend/dist" "s3://${SITE_BUCKET}" --delete --region "$REGION"
+# Cache headers: Vite's content-hashed bundles (assets/) never change under a given name, so browsers may
+# keep them forever; index.html (and the other unhashed files) must revalidate on every load, or a browser
+# holding an old index.html requests chunk names the --delete below has removed (blank page on lazy load).
+# Order: new bundles first, then the HTML that references them, then prune the previous build's files.
+DIST="$ROOT/frontend/dist"
+aws s3 sync "$DIST/assets" "s3://${SITE_BUCKET}/assets" --cache-control "public, max-age=31536000, immutable" --region "$REGION"
+aws s3 sync "$DIST" "s3://${SITE_BUCKET}" --exclude "assets/*" --cache-control "no-cache" --region "$REGION"
+aws s3 sync "$DIST" "s3://${SITE_BUCKET}" --delete --size-only --region "$REGION"
 aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" >/dev/null
 echo "    published; CloudFront invalidation created."
 

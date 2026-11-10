@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after the Orchestrator execution. The re-drive's `DeleteItem` is now conditional on
   `workflowStatus = Error` (a concurrent re-drive gets 409), and if `StartExecution` then fails the cleared
   record is written to the Lambda log.
+- CMS: the page went blank on expanding *Per-frame quality metrics* in a tab opened before a CMS
+  redeploy. The redeploy deleted the content-hashed chunks the old page referenced, the lazy chart import
+  failed, and with no error boundary React unmounted the app. `source/cms/scripts/deploy-all.sh` now
+  uploads `assets/` as `max-age=31536000, immutable` and `index.html` as `no-cache` (new bundles before
+  the HTML, then prune); the app reloads once onto the new build on `vite:preloadError`; and the chart sits
+  in an error boundary that shows a warning instead.
 
 ## [7.0.0] - Unreleased
 
